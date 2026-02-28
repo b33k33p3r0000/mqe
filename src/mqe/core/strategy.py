@@ -18,7 +18,7 @@ signal_strength needed for correlation gate ranking in portfolio.py.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import optuna

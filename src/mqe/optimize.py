@@ -47,6 +47,7 @@ from mqe.core.strategy import MultiPairStrategy
 from mqe.data.fetch import load_multi_pair_data
 from mqe.io import save_json, save_trades_csv
 from mqe.report import print_report, save_markdown_report
+from mqe.risk.correlation import compute_pairwise_correlation
 from mqe.stage1 import run_stage1_pair
 from mqe.stage2 import run_stage2
 
@@ -151,7 +152,6 @@ def run_final_evaluation(
     }
 
     # Compute correlation matrix from 1H close prices
-    from mqe.risk.correlation import compute_pairwise_correlation
     returns_dict = {}
     for symbol in pair_signals:
         close = all_data[symbol][BASE_TF]["close"]
