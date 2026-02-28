@@ -1,8 +1,7 @@
 """
 Data Fetching
 =============
-Multi-pair OHLCV data fetching from exchange API via ccxt.
-Always fresh data, no disk cache.
+Multi-pair OHLCV data loading: local Parquet dataset first, API fallback.
 
 Key difference from QRE: load_multi_pair_data() fetches all pairs at once
 and always includes BTC/USDT (needed for regime filter).
@@ -13,6 +12,8 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Optional
 
 import pandas as pd
 
@@ -28,6 +29,51 @@ from mqe.config import (
 logger = logging.getLogger("mqe.data")
 
 BTC_SYMBOL = "BTC/USDT"
+
+# Default dataset path (centralized OHLCV store)
+DATASET_PATH = Path.home() / "projects" / "dataset" / "data"
+
+
+def load_from_dataset(
+    symbol: str, tf: str, dataset_path: Optional[Path] = None,
+) -> Optional[pd.DataFrame]:
+    """
+    Load OHLCV from local Parquet dataset.
+
+    Args:
+        symbol: Trading pair (e.g. "BTC/USDT")
+        tf: Timeframe (e.g. "1h", "4h")
+        dataset_path: Override dataset directory (for testing)
+
+    Returns:
+        DataFrame with OHLCV data, or None if file doesn't exist.
+    """
+    if dataset_path is None:
+        dataset_path = DATASET_PATH
+
+    # BTC/USDT -> BTCUSDT
+    dir_name = symbol.replace("/", "")
+    parquet_path = dataset_path / dir_name / f"{tf}.parquet"
+
+    if not parquet_path.exists():
+        return None
+
+    logger.info("Loading %s %s from dataset: %s", symbol, tf, parquet_path)
+    try:
+        df = pd.read_parquet(parquet_path)
+    except Exception as e:
+        logger.warning("Failed to read parquet %s: %s", parquet_path, e)
+        return None
+
+    # Ensure UTC DatetimeIndex named "timestamp"
+    if not isinstance(df.index, pd.DatetimeIndex):
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            df.set_index("timestamp", inplace=True)
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+
+    return df
 
 
 def utcnow_ms() -> int:
@@ -123,9 +169,10 @@ def fetch_ohlcv_paginated(
 
 def load_all_data(
     exchange, symbol: str, hours_1h: int,
-) -> dict[str, pd.DataFrame]:
+) -> Dict[str, pd.DataFrame]:
     """
-    Fetch fresh data for one symbol: base TF + all trend TFs.
+    Load data for one symbol: base TF + all trend TFs.
+    Tries local Parquet dataset first, falls back to exchange API.
 
     Args:
         exchange: ccxt exchange instance
@@ -138,13 +185,22 @@ def load_all_data(
     now_ms = utcnow_ms()
     since_1h = now_ms - hours_1h * TF_MS["1h"]
 
-    data: dict[str, pd.DataFrame] = {}
+    data: Dict[str, pd.DataFrame] = {}
+    all_tfs = [BASE_TF] + list(TREND_TFS)
 
-    # Base timeframe
-    data[BASE_TF] = fetch_ohlcv_paginated(exchange, symbol, BASE_TF, since_1h, now_ms)
+    for tf in all_tfs:
+        # Try dataset first
+        df = load_from_dataset(symbol, tf)
+        if df is not None:
+            since_dt = pd.Timestamp(since_1h, unit="ms", tz="UTC")
+            df = df[df.index >= since_dt]
+            if len(df) > 0:
+                logger.info("Using dataset for %s %s (%d rows)", symbol, tf, len(df))
+                data[tf] = df
+                continue
 
-    # Higher timeframes for trend filter
-    for tf in TREND_TFS:
+        # Fallback to API
+        logger.info("Falling back to API for %s %s", symbol, tf)
         data[tf] = fetch_ohlcv_paginated(exchange, symbol, tf, since_1h, now_ms)
 
     return data
