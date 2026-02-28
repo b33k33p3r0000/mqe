@@ -107,6 +107,7 @@ class PortfolioSimulator:
         portfolio_heat: float = 0.05,
         starting_equity: float = STARTING_EQUITY,
         corr_matrix: dict[str, dict[str, float]] | None = None,
+        corr_gate_threshold: float = CORRELATION_GATE_THRESHOLD,
     ) -> None:
         self.pair_data = pair_data
         self.pair_signals = pair_signals
@@ -116,6 +117,7 @@ class PortfolioSimulator:
         self.portfolio_heat = portfolio_heat
         self.starting_equity = starting_equity
         self.corr_matrix = corr_matrix or {}
+        self.corr_gate_threshold = corr_gate_threshold
 
         # Pre-extract base TF arrays per pair for fast bar access
         self.symbols = list(pair_data.keys())
@@ -173,7 +175,7 @@ class PortfolioSimulator:
         count = 0
         for pos in open_positions:
             if pos.symbol in self.corr_matrix[symbol]:
-                if abs(self.corr_matrix[symbol][pos.symbol]) > CORRELATION_GATE_THRESHOLD:
+                if abs(self.corr_matrix[symbol][pos.symbol]) > self.corr_gate_threshold:
                     count += 1
         return count
 

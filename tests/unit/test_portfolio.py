@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mqe.config import CORRELATION_GATE_THRESHOLD
 from mqe.core.portfolio import PortfolioSimulator, PortfolioResult
 from tests.conftest import make_1h_ohlcv_pd, resample_to_multi_tf
 
@@ -290,3 +291,36 @@ class TestShortPositions:
         result = sim.run()
         shorts = [t for t in result.all_trades if t["direction"] == "short"]
         assert len(shorts) >= 1
+
+
+class TestCorrGateThreshold:
+    """Tests that corr_gate_threshold parameter overrides config constant."""
+
+    def test_default_uses_config_value(self):
+        n = 500
+        df = make_1h_ohlcv_pd(n_bars=n, seed=42)
+        data = resample_to_multi_tf(df)
+        pair_data = {"BTC/USDT": data}
+        pair_signals = {"BTC/USDT": _make_pair_signals(n)}
+        pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
+        sim = PortfolioSimulator(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+        )
+        assert sim.corr_gate_threshold == CORRELATION_GATE_THRESHOLD
+
+    def test_custom_threshold_stored(self):
+        n = 500
+        df = make_1h_ohlcv_pd(n_bars=n, seed=42)
+        data = resample_to_multi_tf(df)
+        pair_data = {"BTC/USDT": data}
+        pair_signals = {"BTC/USDT": _make_pair_signals(n)}
+        pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
+        sim = PortfolioSimulator(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+            corr_gate_threshold=0.85,
+        )
+        assert sim.corr_gate_threshold == 0.85
