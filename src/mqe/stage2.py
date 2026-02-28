@@ -26,11 +26,13 @@ import optuna
 import pandas as pd
 
 from mqe.config import (
+    BASE_TF,
     CLUSTER_DEFINITIONS,
     DEFAULT_TRIALS_STAGE2,
     MIN_DRAWDOWN_FLOOR,
     STARTING_EQUITY,
 )
+from mqe.risk.correlation import compute_pairwise_correlation
 from mqe.core.portfolio import PortfolioSimulator
 
 logger = logging.getLogger("mqe.stage2")
@@ -55,9 +57,19 @@ def build_portfolio_objective(
     """
     n_pairs = len(pair_data)
 
+    # Compute correlation matrix once (outside objective loop)
+    returns_dict = {}
+    for symbol in pair_data:
+        if BASE_TF in pair_data[symbol]:
+            close = pair_data[symbol][BASE_TF]["close"]
+            returns_dict[symbol] = close.pct_change().dropna()
+    corr_matrix = compute_pairwise_correlation(returns_dict) if returns_dict else {}
+
     def objective(trial: optuna.trial.Trial) -> tuple[float, float, float]:
         # ── Portfolio-level params ──
-        max_concurrent = trial.suggest_int("max_concurrent", 2, min(n_pairs, 8))
+        max_concurrent = trial.suggest_int(
+            "max_concurrent", min(3, n_pairs), min(n_pairs, 10)
+        )
         cluster_max = trial.suggest_int("cluster_max", 1, 3)
         portfolio_heat = trial.suggest_float("portfolio_heat", 0.03, 0.10)
         corr_gate_threshold = trial.suggest_float("corr_gate_threshold", 0.60, 0.90)
@@ -76,6 +88,7 @@ def build_portfolio_objective(
             cluster_max=cluster_max_dict,
             portfolio_heat=portfolio_heat,
             starting_equity=STARTING_EQUITY,
+            corr_matrix=corr_matrix,
             corr_gate_threshold=corr_gate_threshold,
         )
         result = sim.run()
