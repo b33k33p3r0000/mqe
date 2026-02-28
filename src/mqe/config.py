@@ -16,7 +16,13 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 # ─── SYMBOLS & TIMEFRAMES ───────────────────────────────────────────────────
 
-SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+SYMBOLS = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT",
+    "XRP/USDT", "BNB/USDT", "LINK/USDT",
+    "SUI/USDT", "AVAX/USDT", "ADA/USDT",
+    "NEAR/USDT", "LTC/USDT", "APT/USDT",
+    "ARB/USDT", "OP/USDT", "INJ/USDT",
+]
 TREND_TFS = ["4h", "8h", "1d"]
 BASE_TF = "1h"
 
@@ -32,9 +38,21 @@ TF_MS: dict[str, int] = {
 FEE = float(os.environ.get("FEE", "0.00075"))
 
 SLIPPAGE_MAP: dict[str, float] = {
-    "BTC/USDT": 0.0006,   # 6 bps
-    "ETH/USDT": 0.0009,   # 9 bps
-    "SOL/USDT": 0.0015,   # 15 bps
+    "BTC/USDT": 0.0006,
+    "ETH/USDT": 0.0009,
+    "SOL/USDT": 0.0015,
+    "XRP/USDT": 0.0015,
+    "BNB/USDT": 0.0012,
+    "LINK/USDT": 0.0018,
+    "SUI/USDT": 0.0022,
+    "AVAX/USDT": 0.0020,
+    "ADA/USDT": 0.0020,
+    "NEAR/USDT": 0.0025,
+    "LTC/USDT": 0.0015,
+    "APT/USDT": 0.0025,
+    "ARB/USDT": 0.0030,
+    "OP/USDT": 0.0030,
+    "INJ/USDT": 0.0035,
 }
 DEFAULT_SLIPPAGE = float(os.environ.get("SLIPPAGE", "0.0015"))
 
@@ -76,6 +94,126 @@ PAIR_PROFILES: dict[str, dict] = {
         "oi_mc_ratio": 0.134,
         "volume_24h_min": 1.5e9,
     },
+    "XRP/USDT": {
+        "tier": "A",
+        "cluster": "narrative",
+        "btc_corr": 0.70,
+        "ann_vol": 0.85,
+        "atr_1h_pct": 0.008,
+        "slippage_bps": 15,
+        "oi_mc_ratio": 0.05,
+        "volume_24h_min": 0.5e9,
+    },
+    "BNB/USDT": {
+        "tier": "A",
+        "cluster": "exchange",
+        "btc_corr": 0.84,
+        "ann_vol": 0.60,
+        "atr_1h_pct": 0.005,
+        "slippage_bps": 12,
+        "oi_mc_ratio": 0.03,
+        "volume_24h_min": 0.3e9,
+    },
+    "LINK/USDT": {
+        "tier": "A",
+        "cluster": "narrative",
+        "btc_corr": 0.78,
+        "ann_vol": 0.90,
+        "atr_1h_pct": 0.010,
+        "slippage_bps": 18,
+        "oi_mc_ratio": 0.06,
+        "volume_24h_min": 0.2e9,
+    },
+    "SUI/USDT": {
+        "tier": "A-",
+        "cluster": "smart_contract_l1",
+        "btc_corr": 0.69,
+        "ann_vol": 1.00,
+        "atr_1h_pct": 0.012,
+        "slippage_bps": 22,
+        "oi_mc_ratio": 0.08,
+        "volume_24h_min": 0.15e9,
+    },
+    "AVAX/USDT": {
+        "tier": "B+",
+        "cluster": "smart_contract_l1",
+        "btc_corr": 0.76,
+        "ann_vol": 0.90,
+        "atr_1h_pct": 0.010,
+        "slippage_bps": 20,
+        "oi_mc_ratio": 0.05,
+        "volume_24h_min": 0.15e9,
+    },
+    "ADA/USDT": {
+        "tier": "B+",
+        "cluster": "smart_contract_l1",
+        "btc_corr": 0.80,
+        "ann_vol": 0.85,
+        "atr_1h_pct": 0.009,
+        "slippage_bps": 20,
+        "oi_mc_ratio": 0.04,
+        "volume_24h_min": 0.15e9,
+    },
+    "NEAR/USDT": {
+        "tier": "B",
+        "cluster": "smart_contract_l1",
+        "btc_corr": 0.73,
+        "ann_vol": 0.95,
+        "atr_1h_pct": 0.011,
+        "slippage_bps": 25,
+        "oi_mc_ratio": 0.07,
+        "volume_24h_min": 0.1e9,
+    },
+    "LTC/USDT": {
+        "tier": "B",
+        "cluster": "blue_chip",
+        "btc_corr": 0.84,
+        "ann_vol": 0.65,
+        "atr_1h_pct": 0.007,
+        "slippage_bps": 15,
+        "oi_mc_ratio": 0.03,
+        "volume_24h_min": 0.1e9,
+    },
+    "APT/USDT": {
+        "tier": "B",
+        "cluster": "smart_contract_l1",
+        "btc_corr": 0.73,
+        "ann_vol": 0.95,
+        "atr_1h_pct": 0.012,
+        "slippage_bps": 25,
+        "oi_mc_ratio": 0.08,
+        "volume_24h_min": 0.08e9,
+    },
+    "ARB/USDT": {
+        "tier": "B-",
+        "cluster": "l2",
+        "btc_corr": 0.76,
+        "ann_vol": 1.00,
+        "atr_1h_pct": 0.013,
+        "slippage_bps": 30,
+        "oi_mc_ratio": 0.09,
+        "volume_24h_min": 0.06e9,
+    },
+    "OP/USDT": {
+        "tier": "B-",
+        "cluster": "l2",
+        "btc_corr": 0.76,
+        "ann_vol": 1.00,
+        "atr_1h_pct": 0.013,
+        "slippage_bps": 30,
+        "oi_mc_ratio": 0.09,
+        "volume_24h_min": 0.06e9,
+    },
+    "INJ/USDT": {
+        "tier": "B-",
+        "cluster": "narrative",
+        "btc_corr": 0.69,
+        "ann_vol": 1.10,
+        "atr_1h_pct": 0.015,
+        "slippage_bps": 35,
+        "oi_mc_ratio": 0.10,
+        "volume_24h_min": 0.05e9,
+    },
 }
 
 
@@ -93,7 +231,7 @@ CLUSTER_DEFINITIONS: dict[str, list[str]] = {
                           "NEAR/USDT", "APT/USDT", "SUI/USDT"],
     "l2": ["ARB/USDT", "OP/USDT"],
     "exchange": ["BNB/USDT"],
-    "narrative": ["XRP/USDT", "LINK/USDT", "INJ/USDT", "DOGE/USDT"],
+    "narrative": ["XRP/USDT", "LINK/USDT", "INJ/USDT"],
 }
 
 CLUSTER_MAX_CONCURRENT: dict[str, int] = {

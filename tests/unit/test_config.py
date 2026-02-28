@@ -2,6 +2,7 @@
 
 from mqe.config import (
     SYMBOLS,
+    SLIPPAGE_MAP,
     PAIR_PROFILES,
     CLUSTER_DEFINITIONS,
     CLUSTER_MAX_CONCURRENT,
@@ -17,9 +18,13 @@ from mqe.config import (
 
 class TestSymbols:
     def test_default_symbols(self):
-        assert "BTC/USDT" in SYMBOLS
-        assert "ETH/USDT" in SYMBOLS
-        assert "SOL/USDT" in SYMBOLS
+        assert len(SYMBOLS) == 15
+        assert SYMBOLS[0] == "BTC/USDT"
+        assert SYMBOLS[-1] == "INJ/USDT"
+
+    def test_all_symbols_have_slippage(self):
+        for sym in SYMBOLS:
+            assert sym in SLIPPAGE_MAP, f"Missing slippage for {sym}"
 
     def test_all_symbols_have_profiles(self):
         for sym in SYMBOLS:
@@ -50,6 +55,14 @@ class TestClusterDefinitions:
     def test_cluster_max_concurrent(self):
         for cluster in CLUSTER_DEFINITIONS:
             assert cluster in CLUSTER_MAX_CONCURRENT
+
+    def test_cluster_members_are_valid_symbols(self):
+        """Every symbol listed in CLUSTER_DEFINITIONS must be in SYMBOLS."""
+        for cluster, members in CLUSTER_DEFINITIONS.items():
+            for sym in members:
+                assert sym in SYMBOLS, (
+                    f"{sym} in cluster '{cluster}' but not in SYMBOLS"
+                )
 
 
 class TestHelperFunctions:
