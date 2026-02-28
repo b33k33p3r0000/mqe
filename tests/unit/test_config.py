@@ -6,6 +6,7 @@ from mqe.config import (
     PAIR_PROFILES,
     CLUSTER_DEFINITIONS,
     CLUSTER_MAX_CONCURRENT,
+    TIER_SEARCH_SPACE,
     BASE_TF,
     TREND_TFS,
     FEE,
@@ -78,3 +79,49 @@ class TestHelperFunctions:
 
     def test_trend_tfs(self):
         assert "4h" in TREND_TFS
+
+
+class TestTierSearchSpace:
+    def test_all_profile_tiers_have_search_space(self):
+        """Every tier in PAIR_PROFILES has a matching TIER_SEARCH_SPACE entry."""
+        tiers = {p["tier"] for p in PAIR_PROFILES.values()}
+        for tier in tiers:
+            assert tier in TIER_SEARCH_SPACE, f"Missing search space for tier {tier}"
+
+    def test_search_space_has_all_params(self):
+        """Each tier has all 12 tunable param ranges."""
+        expected_keys = {
+            "allow_flip", "macd_fast", "macd_slow", "macd_signal",
+            "rsi_period", "rsi_lower", "rsi_upper", "rsi_lookback",
+            "adx_threshold", "trail_mult", "hard_stop_mult", "max_hold_bars",
+        }
+        for tier, space in TIER_SEARCH_SPACE.items():
+            assert set(space.keys()) == expected_keys, f"Tier {tier} missing keys"
+
+    def test_ranges_are_valid_tuples(self):
+        """Each range is a (low, high) tuple where low <= high."""
+        for tier, space in TIER_SEARCH_SPACE.items():
+            for key, (lo, hi) in space.items():
+                assert lo <= hi, f"Tier {tier} {key}: {lo} > {hi}"
+
+    def test_tier_s_allows_flip(self):
+        """Tier S has allow_flip (0,1) = optimizable."""
+        assert TIER_SEARCH_SPACE["S"]["allow_flip"] == (0, 1)
+
+    def test_non_s_tiers_fix_flip(self):
+        """Non-S tiers have allow_flip (0,0) = fixed off."""
+        for tier, space in TIER_SEARCH_SPACE.items():
+            if tier != "S":
+                assert space["allow_flip"] == (0, 0), f"Tier {tier} allow_flip not fixed"
+
+    def test_lower_tiers_narrower_macd(self):
+        """Lower tiers have narrower MACD ranges."""
+        s_fast_hi = TIER_SEARCH_SPACE["S"]["macd_fast"][1]
+        b_fast_hi = TIER_SEARCH_SPACE["B"]["macd_fast"][1]
+        assert b_fast_hi < s_fast_hi
+
+    def test_lower_tiers_shorter_hold(self):
+        """Lower tiers have shorter max hold."""
+        s_hold_hi = TIER_SEARCH_SPACE["S"]["max_hold_bars"][1]
+        b_hold_hi = TIER_SEARCH_SPACE["B"]["max_hold_bars"][1]
+        assert b_hold_hi < s_hold_hi
