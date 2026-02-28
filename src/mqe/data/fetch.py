@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Dict, List
 
 import pandas as pd
 
@@ -52,7 +51,7 @@ def fetch_ohlcv_paginated(
     Returns:
         DataFrame with OHLCV columns, DatetimeIndex (UTC)
     """
-    all_rows: List[list] = []
+    all_rows: list[list] = []
     tf_ms = TF_MS[tf]
     cursor = since_ms
     retry_count = 0
@@ -124,7 +123,7 @@ def fetch_ohlcv_paginated(
 
 def load_all_data(
     exchange, symbol: str, hours_1h: int,
-) -> Dict[str, pd.DataFrame]:
+) -> dict[str, pd.DataFrame]:
     """
     Fetch fresh data for one symbol: base TF + all trend TFs.
 
@@ -139,7 +138,7 @@ def load_all_data(
     now_ms = utcnow_ms()
     since_1h = now_ms - hours_1h * TF_MS["1h"]
 
-    data: Dict[str, pd.DataFrame] = {}
+    data: dict[str, pd.DataFrame] = {}
 
     # Base timeframe
     data[BASE_TF] = fetch_ohlcv_paginated(exchange, symbol, BASE_TF, since_1h, now_ms)
@@ -152,8 +151,8 @@ def load_all_data(
 
 
 def load_multi_pair_data(
-    exchange, symbols: List[str], hours: int,
-) -> Dict[str, Dict[str, pd.DataFrame]]:
+    exchange, symbols: list[str], hours: int,
+) -> Dict[str, dict[str, pd.DataFrame]]:
     """
     Fetch OHLCV data for multiple pairs. Always includes BTC/USDT
     (needed for regime filter even if not in symbol list).
@@ -172,7 +171,7 @@ def load_multi_pair_data(
     if BTC_SYMBOL not in fetch_symbols:
         fetch_symbols.append(BTC_SYMBOL)
 
-    result: Dict[str, Dict[str, pd.DataFrame]] = {}
+    result: Dict[str, dict[str, pd.DataFrame]] = {}
 
     for sym in fetch_symbols:
         logger.info("Loading data for %s (%d hours)", sym, hours)

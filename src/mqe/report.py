@@ -9,7 +9,7 @@ Displays per-pair summaries and portfolio summary using Rich tables.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -37,7 +37,7 @@ def _verdict_text(verdict: str) -> Text:
 # ─── PER-PAIR TABLE ──────────────────────────────────────────────────────────
 
 
-def render_pair_table(per_pair: List[Dict[str, Any]]) -> Table:
+def render_pair_table(per_pair: list[dict[str, Any]]) -> Table:
     """Build Rich table with per-pair analysis results.
 
     Args:
@@ -83,7 +83,7 @@ def render_pair_table(per_pair: List[Dict[str, Any]]) -> Table:
 # ─── PORTFOLIO PANEL ─────────────────────────────────────────────────────────
 
 
-def render_portfolio_panel(portfolio: Dict[str, Any]) -> Panel:
+def render_portfolio_panel(portfolio: dict[str, Any]) -> Panel:
     """Build Rich panel with portfolio analysis summary.
 
     Args:
@@ -97,7 +97,7 @@ def render_portfolio_panel(portfolio: Dict[str, Any]) -> Panel:
     wcalmar = portfolio.get("worst_pair_calmar", 0)
     params = portfolio.get("portfolio_params", {})
 
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append(f"Portfolio Calmar:      {pcalmar:.2f}")
     lines.append(f"Worst Pair Calmar:     {wcalmar:.2f}")
 
@@ -134,7 +134,7 @@ def render_portfolio_panel(portfolio: Dict[str, Any]) -> Panel:
 # ─── MAIN REPORT ─────────────────────────────────────────────────────────────
 
 
-def print_report(analysis: Dict[str, Any]) -> None:
+def print_report(analysis: dict[str, Any]) -> None:
     """Print full analysis report to console using Rich.
 
     Args:
@@ -158,7 +158,7 @@ def print_report(analysis: Dict[str, Any]) -> None:
     console.print()
 
 
-def format_discord_summary(analysis: Dict[str, Any]) -> str:
+def format_discord_summary(analysis: dict[str, Any]) -> str:
     """Format analysis as compact Discord code block.
 
     Args:
@@ -167,7 +167,7 @@ def format_discord_summary(analysis: Dict[str, Any]) -> str:
     Returns:
         Formatted string for Discord webhook.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("```")
     lines.append("MQE RUN ANALYSIS")
     lines.append("=" * 30)

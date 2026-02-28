@@ -11,7 +11,7 @@ Channels:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 
@@ -56,7 +56,7 @@ def format_start_message(
     n_trials_s1: int,
     n_trials_s2: int,
     n_splits: int,
-    run_tag: Optional[str] = None,
+    run_tag: str | None = None,
 ) -> str:
     """Format pipeline start notification.
 
@@ -86,7 +86,7 @@ def format_start_message(
     )
 
 
-def format_complete_message(analysis: Dict[str, Any]) -> str:
+def format_complete_message(analysis: dict[str, Any]) -> str:
     """Format pipeline completion notification.
 
     Args:
@@ -127,7 +127,7 @@ def notify_start(**kwargs: Any) -> bool:
     return discord_notify(msg, DISCORD_WEBHOOK_RUNS)
 
 
-def notify_complete(analysis: Dict[str, Any]) -> bool:
+def notify_complete(analysis: dict[str, Any]) -> bool:
     """Send completion notification to Discord."""
     msg = format_complete_message(analysis)
     return discord_notify(msg, DISCORD_WEBHOOK_RUNS)

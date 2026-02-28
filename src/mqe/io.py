@@ -7,10 +7,10 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
-def save_json(path: Path, obj: Dict[str, Any]) -> None:
+def save_json(path: Path, obj: dict[str, Any]) -> None:
     """Save dict to JSON file. Creates parent dirs."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -18,13 +18,13 @@ def save_json(path: Path, obj: Dict[str, Any]) -> None:
         json.dump(obj, f, indent=2, ensure_ascii=False, default=str)
 
 
-def load_json(path: Path) -> Dict[str, Any]:
+def load_json(path: Path) -> dict[str, Any]:
     """Load JSON file to dict."""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_trades_csv(path: Path, trades: List[Dict[str, Any]]) -> None:
+def save_trades_csv(path: Path, trades: list[dict[str, Any]]) -> None:
     """Save trades list to CSV."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

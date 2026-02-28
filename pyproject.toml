@@ -34,17 +34,6 @@ markers = [
     "slow: marks tests as slow",
 ]
 
-[tool.poetry.dependencies]
-pandas = "^2.2"
-numpy = ">=1.22,<2.4"
-numba = "^0.63.1"
-optuna = "^4.7.0"
-ccxt = "^4.5.35"
-python-dotenv = "^1.2.1"
-pyarrow = "^18.0.0"
-requests = "^2.32.0"
-rich = ">=13.0"
-
 [dependency-groups]
 dev = [
     "pytest (>=9.0.2,<10.0.0)"

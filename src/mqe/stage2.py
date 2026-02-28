@@ -19,7 +19,7 @@ Global params optimized:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import optuna
@@ -39,9 +39,9 @@ logger = logging.getLogger("mqe.stage2")
 
 
 def build_portfolio_objective(
-    pair_data: Dict[str, Dict[str, pd.DataFrame]],
-    pair_signals: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
-    pair_params: Dict[str, Dict[str, Any]],
+    pair_data: dict[str, dict[str, pd.DataFrame]],
+    pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    pair_params: dict[str, dict[str, Any]],
 ) -> callable:
     """Build multi-objective function for Stage 2.
 
@@ -54,7 +54,7 @@ def build_portfolio_objective(
     """
     n_pairs = len(pair_data)
 
-    def objective(trial: optuna.trial.Trial) -> Tuple[float, float, float]:
+    def objective(trial: optuna.trial.Trial) -> tuple[float, float, float]:
         # ── Portfolio-level params ──
         max_concurrent = trial.suggest_int("max_concurrent", 2, min(n_pairs, 8))
         cluster_max = trial.suggest_int("cluster_max", 1, 3)
@@ -138,12 +138,12 @@ def build_portfolio_objective(
 
 
 def run_stage2(
-    pair_data: Dict[str, Dict[str, pd.DataFrame]],
-    pair_signals: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
-    pair_params: Dict[str, Dict[str, Any]],
+    pair_data: dict[str, dict[str, pd.DataFrame]],
+    pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    pair_params: dict[str, dict[str, Any]],
     n_trials: int = DEFAULT_TRIALS_STAGE2,
     seed: int = 42,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run Stage 2 portfolio optimization with NSGA-II.
 
     Args:

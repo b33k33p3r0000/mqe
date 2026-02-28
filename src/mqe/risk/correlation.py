@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
-
 import pandas as pd
 
 from mqe.config import CORRELATION_GATE_THRESHOLD
 
 
 def compute_rolling_correlation_matrix(
-    returns_dict: Dict[str, pd.Series],
+    returns_dict: dict[str, pd.Series],
     window: int = 720,  # 30 days × 24 hours
 ) -> pd.DataFrame:
     """
@@ -37,9 +35,9 @@ def compute_rolling_correlation_matrix(
 
 
 def compute_pairwise_correlation(
-    returns_dict: Dict[str, pd.Series],
+    returns_dict: dict[str, pd.Series],
     window: int = 720,
-) -> Dict[str, Dict[str, float]]:
+) -> dict[str, dict[str, float]]:
     """
     Compute pairwise correlation dict from return series.
 
@@ -48,7 +46,7 @@ def compute_pairwise_correlation(
     """
     df = pd.DataFrame(returns_dict)
     corr = df.iloc[-window:].corr()
-    result: Dict[str, Dict[str, float]] = {}
+    result: dict[str, dict[str, float]] = {}
     for sym_a in corr.columns:
         result[sym_a] = {}
         for sym_b in corr.columns:
@@ -59,8 +57,8 @@ def compute_pairwise_correlation(
 
 def get_correlated_pairs(
     symbol: str,
-    open_pairs: List[str],
-    corr_dict: Dict[str, Dict[str, float]],
+    open_pairs: list[str],
+    corr_dict: dict[str, dict[str, float]],
     threshold: float = CORRELATION_GATE_THRESHOLD,
 ) -> int:
     """

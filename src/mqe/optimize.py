@@ -20,7 +20,7 @@ import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -45,8 +45,8 @@ _STRATEGY_PARAM_KEYS = set(MultiPairStrategy().get_default_params().keys())
 
 
 def fetch_all_data(
-    symbols: List[str], hours: int = 8760,
-) -> Dict[str, Dict[str, pd.DataFrame]]:
+    symbols: list[str], hours: int = 8760,
+) -> dict[str, dict[str, pd.DataFrame]]:
     """Fetch data for all symbols using ccxt/Binance."""
     import ccxt
 
@@ -54,7 +54,7 @@ def fetch_all_data(
     return load_multi_pair_data(exchange, symbols, hours)
 
 
-def _extract_strategy_params(stage1_result: Dict[str, Any]) -> Dict[str, Any]:
+def _extract_strategy_params(stage1_result: dict[str, Any]) -> dict[str, Any]:
     """Extract only strategy params from Stage 1 flat result dict.
 
     Stage 1 returns a flat dict with both params (macd_fast, rsi_period, etc.)
@@ -65,10 +65,10 @@ def _extract_strategy_params(stage1_result: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def precompute_all_signals(
-    pair_data: Dict[str, Dict[str, pd.DataFrame]],
-    pair_params: Dict[str, Dict[str, Any]],
-    btc_stage1_params: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    pair_data: dict[str, dict[str, pd.DataFrame]],
+    pair_params: Dict[str, dict[str, Any]],
+    btc_stage1_params: Optional[dict[str, Any]] = None,
+) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """Pre-compute signals for all pairs using Stage 1 best params.
 
     Args:
@@ -80,7 +80,7 @@ def precompute_all_signals(
         Dict of {symbol: (buy_signal, sell_signal, atr_values, signal_strength)}.
     """
     strategy = MultiPairStrategy()
-    signals: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+    signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
     btc_data = pair_data.get("BTC/USDT")
 
     for symbol, data in pair_data.items():
@@ -98,11 +98,11 @@ def precompute_all_signals(
 
 
 def run_stage1_all_pairs(
-    symbols: List[str],
-    all_data: Dict[str, Dict[str, pd.DataFrame]],
+    symbols: list[str],
+    all_data: dict[str, dict[str, pd.DataFrame]],
     n_trials: int,
-    max_workers: Optional[int] = None,
-) -> Dict[str, Dict[str, Any]]:
+    max_workers: int | None = None,
+) -> Dict[str, dict[str, Any]]:
     """Run Stage 1 for all pairs in parallel.
 
     Args:
@@ -117,7 +117,7 @@ def run_stage1_all_pairs(
     if max_workers is None:
         max_workers = min(len(symbols), max(1, (os.cpu_count() or 4) - 1))
 
-    results: Dict[str, Dict[str, Any]] = {}
+    results: Dict[str, dict[str, Any]] = {}
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -137,14 +137,14 @@ def run_stage1_all_pairs(
 
 
 def run_pipeline(
-    symbols: Optional[List[str]] = None,
+    symbols: list[str] | None = None,
     stage1_trials: int = DEFAULT_TRIALS_STAGE1,
     stage2_trials: int = DEFAULT_TRIALS_STAGE2,
     hours: int = 8760,
-    output_dir: Optional[Path] = None,
+    output_dir: Path | None = None,
     tag: str = "",
-    max_workers: Optional[int] = None,
-) -> Dict[str, Any]:
+    max_workers: int | None = None,
+) -> dict[str, Any]:
     """Run full MQE optimization pipeline.
 
     Args:
@@ -201,7 +201,7 @@ def run_pipeline(
     save_json(output_dir / "stage2_result.json", stage2_result)
 
     # ── 5. Save combined results ──
-    combined: Dict[str, Any] = {
+    combined: dict[str, Any] = {
         "symbols": symbols,
         "stage1_trials": stage1_trials,
         "stage2_trials": stage2_trials,

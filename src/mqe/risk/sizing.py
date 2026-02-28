@@ -11,7 +11,6 @@ Sizing formula:
 
 from __future__ import annotations
 
-from typing import Dict, List
 
 from mqe.config import (
     OI_MC_DANGER_PENALTY,
@@ -24,10 +23,10 @@ from mqe.config import (
 
 def compute_position_size(
     symbol: str,
-    open_pairs: List[str],
+    open_pairs: list[str],
     equity: float,
-    atr_dict: Dict[str, float],
-    corr_dict: Dict[str, Dict[str, float]],
+    atr_dict: dict[str, float],
+    corr_dict: dict[str, dict[str, float]],
 ) -> float:
     """
     Compute position size for a symbol.

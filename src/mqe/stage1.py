@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 import numpy as np
 import optuna
@@ -60,9 +60,9 @@ logger = logging.getLogger("mqe.stage1")
 
 def compute_awf_splits(
     total_hours: int,
-    n_splits: Optional[int] = None,
+    n_splits: int | None = None,
     test_size: float = 0.20,
-) -> Optional[List[Dict[str, float]]]:
+) -> list[dict[str, float]] | None:
     """Compute Anchored Walk-Forward splits based on data length.
 
     Returns None if data is too short.
@@ -73,7 +73,7 @@ def compute_awf_splits(
     purge_frac = PURGE_GAP_BARS / total_hours  # gap as fraction of total data
 
     if n_splits is not None and n_splits >= 2:
-        splits: List[Dict[str, float]] = []
+        splits: list[dict[str, float]] = []
         train_start = 0.50
         available = 1.0 - train_start - test_size - purge_frac
         train_step = available / n_splits
@@ -169,8 +169,8 @@ def compute_objective_score(
 
 def build_objective(
     symbol: str,
-    data: Dict[str, pd.DataFrame],
-    splits: List[Dict[str, float]],
+    data: dict[str, pd.DataFrame],
+    splits: list[dict[str, float]],
     allow_flip_setting: int = 0,
 ) -> Callable:
     """Build Optuna objective function for AWF optimization.
@@ -189,7 +189,7 @@ def build_objective(
     total_bars = len(base_df)
 
     # Pre-compute RSI for all possible Optuna periods (3-30)
-    precomputed_cache: Dict[str, Any] = {"rsi": {}}
+    precomputed_cache: dict[str, Any] = {"rsi": {}}
     for period in range(3, 31):
         precomputed_cache["rsi"][period] = compute_rsi(
             base_df["close"], period
@@ -212,12 +212,12 @@ def build_objective(
         trail_mult = float(params.get("trail_mult", 3.0))
         max_hold_bars = int(params.get("max_hold_bars", 168))
 
-        split_scores: List[float] = []
-        _sharpes: List[float] = []
-        _drawdowns: List[float] = []
-        _pnls: List[float] = []
-        _trade_counts: List[int] = []
-        _tpy: List[float] = []
+        split_scores: list[float] = []
+        _sharpes: list[float] = []
+        _drawdowns: list[float] = []
+        _pnls: list[float] = []
+        _trade_counts: list[int] = []
+        _tpy: list[float] = []
 
         for split in splits:
             train_end = int(total_bars * split["train_end"])
@@ -309,14 +309,14 @@ def build_objective(
 
 def run_stage1_pair(
     symbol: str,
-    data: Dict[str, pd.DataFrame],
+    data: dict[str, pd.DataFrame],
     n_trials: int = DEFAULT_TRIALS_STAGE1,
-    n_splits: Optional[int] = None,
+    n_splits: int | None = None,
     seed: int = 42,
     timeout: int = 0,
     test_size: float = 0.20,
     allow_flip: int = 0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run Stage 1 optimization for a single pair.
 
     This is the per-pair optimizer. Each pair is optimized independently
@@ -401,7 +401,7 @@ def run_stage1_pair(
         )
 
     # Build result dict
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     result.update(best_params)
     result.update({
         "symbol": symbol,

@@ -10,7 +10,7 @@ Portfolio: pair failure concentration, portfolio Calmar, worst-pair Calmar.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from mqe.config import MIN_TRADES_YEAR_HARD, SHARPE_SUSPECT_THRESHOLD
 
@@ -20,7 +20,7 @@ logger = logging.getLogger("mqe.analyze")
 # ─── PER-PAIR ANALYSIS ───────────────────────────────────────────────────────
 
 
-def analyze_pair(symbol: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_pair(symbol: str, metrics: dict[str, Any]) -> dict[str, Any]:
     """Analyze a single pair's optimization results.
 
     Checks trade count, Sharpe, Calmar, drawdown, win rate.
@@ -35,8 +35,8 @@ def analyze_pair(symbol: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
         Dict with symbol, verdict, warnings, failures, metrics_summary.
     """
     verdict = "PASS"
-    warnings: List[str] = []
-    failures: List[str] = []
+    warnings: list[str] = []
+    failures: list[str] = []
 
     trades_per_year = metrics.get("trades_per_year", 0)
     sharpe = metrics.get("sharpe_equity", 0)
@@ -89,9 +89,9 @@ def analyze_pair(symbol: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def analyze_portfolio(
-    stage2_result: Dict[str, Any],
-    per_pair_results: List[Dict[str, Any]],
-) -> Dict[str, Any]:
+    stage2_result: dict[str, Any],
+    per_pair_results: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Analyze portfolio-level optimization results.
 
     Checks portfolio Calmar, worst-pair Calmar, pair failure concentration.
@@ -105,8 +105,8 @@ def analyze_portfolio(
         worst_pair_calmar, portfolio_params.
     """
     verdict = "PASS"
-    warnings: List[str] = []
-    failures: List[str] = []
+    warnings: list[str] = []
+    failures: list[str] = []
 
     objectives = stage2_result.get("objectives", {})
     portfolio_calmar = objectives.get("portfolio_calmar", 0)
@@ -147,7 +147,7 @@ def analyze_portfolio(
 # ─── ORCHESTRATOR ─────────────────────────────────────────────────────────────
 
 
-def analyze_run(pipeline_result: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_run(pipeline_result: dict[str, Any]) -> dict[str, Any]:
     """Full analysis of pipeline run.
 
     Runs per-pair analysis on each Stage 1 result, then portfolio analysis
@@ -164,7 +164,7 @@ def analyze_run(pipeline_result: Dict[str, Any]) -> Dict[str, Any]:
     stage1 = pipeline_result.get("stage1_results", {})
     stage2 = pipeline_result.get("stage2_results", {})
 
-    per_pair: List[Dict[str, Any]] = []
+    per_pair: list[dict[str, Any]] = []
     for symbol, result in stage1.items():
         metrics = result.get("metrics", {})
         pair_analysis = analyze_pair(symbol, metrics)

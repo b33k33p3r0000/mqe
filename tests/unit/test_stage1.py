@@ -142,9 +142,15 @@ class TestBuildObjective:
 
         obj = build_objective("BTC/USDT", data, splits)
 
+        # Use 10 trials — single trial can get pruned by MACD fast<slow constraint
         study = optuna.create_study(direction="maximize")
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        study.optimize(obj, n_trials=1, show_progress_bar=False)
+        study.optimize(obj, n_trials=10, show_progress_bar=False)
+        completed = [
+            t for t in study.trials
+            if t.state == optuna.trial.TrialState.COMPLETE
+        ]
+        assert len(completed) > 0, "All trials pruned — no completed trials"
         assert isinstance(study.best_value, float)
 
 

@@ -18,7 +18,7 @@ signal_strength needed for correlation gate ranking in portfolio.py.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import optuna
@@ -37,24 +37,24 @@ class BaseStrategy(ABC):
     def get_optuna_params(
         self,
         trial: optuna.trial.Trial,
-        symbol: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        symbol: str | None = None,
+    ) -> dict[str, Any]:
         pass
 
     @abstractmethod
     def precompute_signals(
         self,
-        data: Dict[str, Any],
-        params: Dict[str, Any],
-        precomputed_cache: Optional[Dict[str, Any]] = None,
-        symbol: Optional[str] = None,
-        btc_regime_data: Optional[Dict[str, Any]] = None,
-        btc_stage1_params: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        data: dict[str, Any],
+        params: dict[str, Any],
+        precomputed_cache: dict[str, Any] | None = None,
+        symbol: str | None = None,
+        btc_regime_data: dict[str, Any] | None = None,
+        btc_stage1_params: dict[str, Any] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Returns (buy_signal, sell_signal, atr_values, signal_strength)."""
         pass
 
-    def get_default_params(self) -> Dict[str, Any]:
+    def get_default_params(self) -> dict[str, Any]:
         return {}
 
 
@@ -70,11 +70,11 @@ class MultiPairStrategy(BaseStrategy):
     def get_optuna_params(
         self,
         trial: optuna.trial.Trial,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
         allow_flip_override: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """14 Optuna parameters per pair."""
-        params: Dict[str, Any] = {}
+        params: dict[str, Any] = {}
 
         # -- Layers 1-3 (from QRE) --
         params["macd_fast"] = trial.suggest_float("macd_fast", 1.0, 20.0)
@@ -107,13 +107,13 @@ class MultiPairStrategy(BaseStrategy):
 
     def precompute_signals(
         self,
-        data: Dict[str, Any],
-        params: Dict[str, Any],
-        precomputed_cache: Optional[Dict[str, Any]] = None,
-        symbol: Optional[str] = None,
-        btc_regime_data: Optional[Dict[str, Any]] = None,
-        btc_stage1_params: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        data: dict[str, Any],
+        params: dict[str, Any],
+        precomputed_cache: dict[str, Any] | None = None,
+        symbol: str | None = None,
+        btc_regime_data: dict[str, Any] | None = None,
+        btc_stage1_params: dict[str, Any] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Compute buy/sell signals + ATR array + signal strength.
 
@@ -285,7 +285,7 @@ class MultiPairStrategy(BaseStrategy):
             signal_strength,
         )
 
-    def get_default_params(self) -> Dict[str, Any]:
+    def get_default_params(self) -> dict[str, Any]:
         return {
             "macd_fast": 10.5,
             "macd_slow": 27,

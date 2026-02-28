@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -39,14 +39,13 @@ from mqe.config import (
     CORRELATION_GATE_THRESHOLD,
     FEE,
     MIN_HOLD_BARS,
-    POSITION_MAX_PCT,
-    POSITION_MIN_PCT,
     SIGNAL_STRENGTH_GATED,
     STARTING_EQUITY,
     TRAILING_ACTIVATION_MULT,
     get_cluster,
     get_slippage,
 )
+from mqe.risk.sizing import compute_position_size
 
 logger = logging.getLogger("mqe.portfolio")
 
@@ -83,10 +82,10 @@ class PortfolioResult:
 
     equity: float
     equity_curve: np.ndarray
-    all_trades: List[Dict[str, Any]]
-    per_pair_trades: Dict[str, List[Dict[str, Any]]]
+    all_trades: list[dict[str, Any]]
+    per_pair_trades: dict[str, list[dict[str, Any]]]
     max_positions_open: int
-    max_cluster_open: Dict[str, int]
+    max_cluster_open: dict[str, int]
     peak_equity: float
     max_drawdown: float
 
@@ -100,14 +99,14 @@ class PortfolioSimulator:
 
     def __init__(
         self,
-        pair_data: Dict[str, Dict[str, pd.DataFrame]],
-        pair_signals: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
-        pair_params: Dict[str, Dict[str, Any]],
+        pair_data: dict[str, dict[str, pd.DataFrame]],
+        pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        pair_params: dict[str, dict[str, Any]],
         max_concurrent: int = 5,
-        cluster_max: Optional[Dict[str, int]] = None,
+        cluster_max: dict[str, int] | None = None,
         portfolio_heat: float = 0.05,
         starting_equity: float = STARTING_EQUITY,
-        corr_matrix: Optional[Dict[str, Dict[str, float]]] = None,
+        corr_matrix: dict[str, dict[str, float]] | None = None,
     ) -> None:
         self.pair_data = pair_data
         self.pair_signals = pair_signals
@@ -120,9 +119,10 @@ class PortfolioSimulator:
 
         # Pre-extract base TF arrays per pair for fast bar access
         self.symbols = list(pair_data.keys())
-        self._close: Dict[str, np.ndarray] = {}
-        self._high: Dict[str, np.ndarray] = {}
-        self._low: Dict[str, np.ndarray] = {}
+        self._close: dict[str, np.ndarray] = {}
+        self._high: dict[str, np.ndarray] = {}
+        self._low: dict[str, np.ndarray] = {}
+        self._timestamps: dict[str, pd.DatetimeIndex] = {}
         self._n_bars: int = 0
 
         for sym in self.symbols:
@@ -130,6 +130,7 @@ class PortfolioSimulator:
             self._close[sym] = base["close"].values.astype(np.float64)
             self._high[sym] = base["high"].values.astype(np.float64)
             self._low[sym] = base["low"].values.astype(np.float64)
+            self._timestamps[sym] = base.index
             n = len(base)
             if self._n_bars == 0:
                 self._n_bars = n
@@ -137,10 +138,10 @@ class PortfolioSimulator:
                 self._n_bars = min(self._n_bars, n)
 
         # Unpack signals per pair
-        self._buy: Dict[str, np.ndarray] = {}
-        self._sell: Dict[str, np.ndarray] = {}
-        self._atr: Dict[str, np.ndarray] = {}
-        self._sig_str: Dict[str, np.ndarray] = {}
+        self._buy: dict[str, np.ndarray] = {}
+        self._sell: dict[str, np.ndarray] = {}
+        self._atr: dict[str, np.ndarray] = {}
+        self._sig_str: dict[str, np.ndarray] = {}
 
         for sym in self.symbols:
             signals = pair_signals[sym]
@@ -154,7 +155,7 @@ class PortfolioSimulator:
     # ------------------------------------------------------------------
 
     def _count_cluster(
-        self, cluster: str, open_positions: List[OpenPosition]
+        self, cluster: str, open_positions: list[OpenPosition]
     ) -> int:
         """Count open positions in a given cluster."""
         count = 0
@@ -164,7 +165,7 @@ class PortfolioSimulator:
         return count
 
     def _correlated_open_count(
-        self, symbol: str, open_positions: List[OpenPosition]
+        self, symbol: str, open_positions: list[OpenPosition]
     ) -> int:
         """Count open positions highly correlated with symbol."""
         if not self.corr_matrix or symbol not in self.corr_matrix:
@@ -182,7 +183,7 @@ class PortfolioSimulator:
         bar: int,
         reason: str,
         exit_price: float,
-    ) -> Tuple[float, Dict[str, Any]]:
+    ) -> tuple[float, dict[str, Any]]:
         """
         Close a position and compute PnL.
 
@@ -206,11 +207,18 @@ class PortfolioSimulator:
 
         pnl_pct = pnl / pos.capital if pos.capital > 0 else 0.0
 
+        # Convert bar indices to ISO timestamps for metrics compatibility
+        ts = self._timestamps[pos.symbol]
+        entry_ts = ts[pos.entry_bar].isoformat() if pos.entry_bar < len(ts) else ""
+        exit_ts = ts[bar].isoformat() if bar < len(ts) else ""
+
         trade = {
             "symbol": pos.symbol,
             "direction": "long" if pos.direction == 1 else "short",
             "entry_bar": pos.entry_bar,
             "exit_bar": bar,
+            "entry_ts": entry_ts,
+            "exit_ts": exit_ts,
             "entry_price": round(pos.entry_price, 6),
             "exit_price": round(exit_price, 6),
             "hold_bars": bar - pos.entry_bar,
@@ -241,16 +249,16 @@ class PortfolioSimulator:
         cash = self.starting_equity
 
         equity_curve = np.full(n_bars, self.starting_equity)
-        open_positions: List[OpenPosition] = []
-        all_trades: List[Dict[str, Any]] = []
-        per_pair_trades: Dict[str, List[Dict[str, Any]]] = {
+        open_positions: list[OpenPosition] = []
+        all_trades: list[dict[str, Any]] = []
+        per_pair_trades: dict[str, list[dict[str, Any]]] = {
             sym: [] for sym in self.symbols
         }
 
         peak_equity = self.starting_equity
         max_drawdown = 0.0
         max_positions_open = 0
-        max_cluster_open: Dict[str, int] = {}
+        max_cluster_open: dict[str, int] = {}
 
         # Track which symbols have an open position
         open_symbols: set = set()
@@ -270,7 +278,7 @@ class PortfolioSimulator:
                             pos.lowest_price = current_low
 
             # ── 2. Check exits for all open positions ──
-            to_close: List[Tuple[int, str, float]] = []  # (index, reason, exit_price)
+            to_close: list[tuple[int, str, float]] = []  # (index, reason, exit_price)
 
             for i, pos in enumerate(open_positions):
                 sym = pos.symbol
@@ -377,7 +385,7 @@ class PortfolioSimulator:
                     open_positions.pop(worst_idx)
 
             # ── 3. Collect entry candidates ──
-            candidates: List[Tuple[str, int, float]] = []  # (symbol, direction, signal_strength)
+            candidates: list[tuple[str, int, float]] = []  # (symbol, direction, signal_strength)
 
             for sym in self.symbols:
                 if sym in open_symbols:
@@ -390,7 +398,7 @@ class PortfolioSimulator:
                     candidates.append((sym, -1, float(self._sig_str[sym][bar])))
 
             # ── 4. Filter candidates ──
-            filtered: List[Tuple[str, int, float]] = []
+            filtered: list[tuple[str, int, float]] = []
             for sym, direction, strength in candidates:
                 # Max concurrent check
                 if len(open_positions) >= self.max_concurrent:
@@ -427,12 +435,17 @@ class PortfolioSimulator:
                 current_price = self._close[sym][bar]
                 slippage = get_slippage(sym)
 
-                # Position sizing: simple pct of equity (inv-vol handled by sizing module externally)
-                size_pct = min(
-                    POSITION_MAX_PCT,
-                    max(POSITION_MIN_PCT, 1.0 / max(len(self.symbols), 1)),
+                # Position sizing: inverse-vol + correlation haircut + OI/MC penalty
+                atr_dict = {
+                    s: float(self._atr[s][bar]) / self._close[s][bar]
+                    if self._close[s][bar] > 0 and self._atr[s][bar] > 0
+                    else 0.01
+                    for s in self.symbols
+                }
+                open_pair_list = [p.symbol for p in open_positions]
+                capital = compute_position_size(
+                    sym, open_pair_list, cash, atr_dict, self.corr_matrix,
                 )
-                capital = cash * size_pct
                 if capital <= 0:
                     continue
 
@@ -467,7 +480,7 @@ class PortfolioSimulator:
                 max_positions_open = len(open_positions)
 
             # Track cluster maximums
-            cluster_counts: Dict[str, int] = {}
+            cluster_counts: dict[str, int] = {}
             for pos in open_positions:
                 c = get_cluster(pos.symbol)
                 cluster_counts[c] = cluster_counts.get(c, 0) + 1

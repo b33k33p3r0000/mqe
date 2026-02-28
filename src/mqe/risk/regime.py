@@ -6,7 +6,7 @@ so the regime filter benefits from per-pair optimization.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -16,9 +16,9 @@ from mqe.core.indicators import macd
 
 
 def compute_btc_regime(
-    btc_data: Dict[str, pd.DataFrame],
+    btc_data: dict[str, pd.DataFrame],
     regime_tf: str = "4h",
-    btc_stage1_params: Optional[Dict[str, Any]] = None,
+    btc_stage1_params: dict[str, Any] | None = None,
 ) -> np.ndarray:
     """
     Compute BTC regime aligned to 1H bars.
@@ -50,14 +50,9 @@ def compute_btc_regime(
     htf_ts = htf.index.astype(np.int64) // 10**6
     tf_indices = precompute_timeframe_indices(base_ts, htf_ts)
 
-    regime = np.zeros(len(base), dtype=np.float64)
-    for i in range(len(base)):
-        htf_idx = tf_indices[i]
-        if has_nan[htf_idx]:
-            regime[i] = np.nan
-        elif bullish[htf_idx]:
-            regime[i] = 1.0
-        else:
-            regime[i] = -1.0
+    # Vectorized: map HTF state to 1H bars via tf_indices
+    nan_mask = has_nan[tf_indices]
+    bull_mask = bullish[tf_indices]
+    regime = np.where(nan_mask, np.nan, np.where(bull_mask, 1.0, -1.0))
 
     return regime
