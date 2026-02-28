@@ -11,7 +11,7 @@ cd "$SCRIPT_DIR"
 # =============================================================================
 
 CORE_PAIRS="BTC/USDT ETH/USDT SOL/USDT"
-ALL_PAIRS="BTC/USDT ETH/USDT SOL/USDT BNB/USDT ADA/USDT AVAX/USDT DOT/USDT LINK/USDT MATIC/USDT ARB/USDT OP/USDT DOGE/USDT SHIB/USDT PEPE/USDT WIF/USDT RENDER/USDT"
+ALL_PAIRS="BTC/USDT ETH/USDT SOL/USDT XRP/USDT BNB/USDT LINK/USDT SUI/USDT AVAX/USDT ADA/USDT NEAR/USDT LTC/USDT APT/USDT ARB/USDT OP/USDT INJ/USDT"
 
 # =============================================================================
 # HELP
@@ -26,7 +26,7 @@ Presets (interactive menu when no CLI args):
   1) Test     —  1k S1 +  500 S2 trials, 3 pairs (BTC, ETH, SOL)
   2) Quick    —  5k S1 +   2k S2 trials, 3 pairs
   3) Main     — 10k S1 +   5k S2 trials, 3 pairs
-  4) Full     — 10k S1 +   5k S2 trials, 16 pairs (all clusters)
+  4) Full     — 10k S1 +   5k S2 trials, 15 pairs (all clusters)
   5) Custom   — You choose everything
 
 All presets use --hours 8760 (~1yr) by default.
@@ -235,7 +235,7 @@ if [ -z "$S1_TRIALS" ] && [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; the
     echo "  1) Test    —   1k S1 +   500 S2,  3 pairs (BTC, ETH, SOL)"
     echo "  2) Quick   —   5k S1 +    2k S2,  3 pairs"
     echo "  3) Main    —  10k S1 +    5k S2,  3 pairs"
-    echo "  4) Full    —  10k S1 +    5k S2, 16 pairs (all clusters)"
+    echo "  4) Full    —  10k S1 +    5k S2, 15 pairs (all clusters)"
     echo "  5) Custom  —  You choose everything"
     echo ""
     read -p "Select preset (1-5): " choice
@@ -278,7 +278,7 @@ if [ -z "$S1_TRIALS" ] && [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; the
             echo ""
             echo "Pairs:"
             echo "  1) Core 3 (BTC, ETH, SOL)"
-            echo "  2) All 16 (full cluster set)"
+            echo "  2) All 15 (full cluster set)"
             echo "  3) Custom list"
             read -p "Select (1-3) [1]: " pair_choice
             case "${pair_choice:-1}" in
