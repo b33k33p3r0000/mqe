@@ -384,6 +384,8 @@ def run_stage1_pair(
     timeout: int = 0,
     test_size: float = 0.20,
     allow_flip: int = 0,
+    output_dir: Path | None = None,
+    progress_interval: int = 500,
 ) -> dict[str, Any]:
     """Run Stage 1 optimization for a single pair.
 
@@ -399,6 +401,8 @@ def run_stage1_pair(
         timeout: Optuna timeout in seconds (0 = no timeout).
         test_size: Test window fraction (default 0.20).
         allow_flip: Fixed allow_flip value (0=selective, 1=always-in).
+        output_dir: Directory for progress/result files (None = no file output).
+        progress_interval: Write progress every N trials (default 500).
 
     Returns:
         Dict with best_params (all 14 strategy params) + optimization metadata.
@@ -441,6 +445,12 @@ def run_stage1_pair(
     # Build objective and run
     objective = build_objective(symbol, data, splits, allow_flip_setting=allow_flip)
 
+    callbacks: list[Any] = []
+    if output_dir is not None:
+        callbacks.append(
+            ProgressCallback(symbol, output_dir, n_trials, progress_interval)
+        )
+
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study.optimize(
         objective,
@@ -448,6 +458,7 @@ def run_stage1_pair(
         timeout=timeout if timeout > 0 else None,
         n_jobs=1,
         show_progress_bar=False,
+        callbacks=callbacks,
     )
 
     # Collect results
@@ -488,6 +499,18 @@ def run_stage1_pair(
     for key in ["sharpe_equity", "max_drawdown", "total_pnl_pct", "trades", "trades_per_year"]:
         if key in best_trial.user_attrs:
             result[key] = best_trial.user_attrs[key]
+
+    # Save final result and clean up progress file
+    if output_dir is not None:
+        s1_dir = Path(output_dir) / "stage1"
+        s1_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = symbol.replace("/", "_")
+        final_path = s1_dir / f"{safe_name}.json"
+        with open(final_path, "w") as f:
+            json.dump(result, f, indent=2)
+        progress_path = s1_dir / f"{safe_name}_progress.json"
+        if progress_path.exists():
+            progress_path.unlink()
 
     logger.info(
         "Stage 1 [%s]: Done. Objective=%.4f, %d/%d trials completed",

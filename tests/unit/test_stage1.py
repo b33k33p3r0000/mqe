@@ -213,6 +213,30 @@ class TestRunStage1Pair:
         )
         assert result["objective_value"] >= 0.0
 
+    def test_writes_progress_when_output_dir_provided(self, synthetic_data, tmp_path):
+        """When output_dir is provided, final result file is saved."""
+        result = run_stage1_pair(
+            symbol="BTC/USDT",
+            data=synthetic_data,
+            n_trials=600,
+            seed=42,
+            output_dir=tmp_path,
+            progress_interval=500,
+        )
+        assert isinstance(result, dict)
+        final_file = tmp_path / "stage1" / "BTC_USDT.json"
+        assert final_file.exists()
+
+    def test_no_crash_when_no_output_dir(self, synthetic_data):
+        """Without output_dir, no crash (backward compat)."""
+        result = run_stage1_pair(
+            symbol="BTC/USDT",
+            data=synthetic_data,
+            n_trials=20,
+            seed=42,
+        )
+        assert isinstance(result, dict)
+
 
 # ─── create_sampler ─────────────────────────────────────────────────────────
 

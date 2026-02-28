@@ -250,6 +250,7 @@ def run_stage1_all_pairs(
     all_data: dict[str, dict[str, pd.DataFrame]],
     n_trials: int,
     max_workers: int | None = None,
+    output_dir: Path | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run Stage 1 for all pairs in parallel.
 
@@ -258,6 +259,7 @@ def run_stage1_all_pairs(
         all_data: Dict of {symbol: {timeframe: DataFrame}}.
         n_trials: Number of Optuna trials per pair.
         max_workers: Max parallel workers (default: min(n_pairs, cpu_count-1)).
+        output_dir: Directory for progress/result files (None = no file output).
 
     Returns:
         Dict of {symbol: stage1_result_dict}.
@@ -269,7 +271,10 @@ def run_stage1_all_pairs(
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(run_stage1_pair, symbol, all_data[symbol], n_trials): symbol
+            executor.submit(
+                run_stage1_pair, symbol, all_data[symbol], n_trials,
+                output_dir=output_dir,
+            ): symbol
             for symbol in symbols
         }
         for future in as_completed(futures):
@@ -334,14 +339,8 @@ def run_pipeline(
     # ── 2. Stage 1: per-pair optimization (parallel) ──
     stage1_results = run_stage1_all_pairs(
         symbols, all_data, stage1_trials, max_workers,
+        output_dir=output_dir,
     )
-
-    # Save Stage 1 results
-    s1_dir = output_dir / "stage1"
-    s1_dir.mkdir(exist_ok=True)
-    for sym, result in stage1_results.items():
-        safe_name = sym.replace("/", "_")
-        save_json(s1_dir / f"{safe_name}.json", result)
 
     # ── 3. Re-compute signals with best Stage 1 params ──
     pair_params = {
