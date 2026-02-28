@@ -9,12 +9,15 @@ Pipeline flow:
   3. Run Stage 1 per pair (parallel via ProcessPoolExecutor)
   4. Re-compute signals with best Stage 1 params
   5. Run Stage 2 portfolio optimization
-  6. Save results (JSON + CSV)
+  6. Final evaluation: full backtest + portfolio sim with best params
+  7. Analyze + report (console + markdown)
+  8. Save results (JSON + CSV)
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import logging
 import os
 import time
@@ -25,16 +28,23 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from mqe.analyze import analyze_run
 from mqe.config import (
+    BASE_TF,
     DEFAULT_TRIALS_STAGE1,
     DEFAULT_TRIALS_STAGE2,
     DISCORD_WEBHOOK_RUNS,
+    MIN_WARMUP_BARS,
     STARTING_EQUITY,
     SYMBOLS,
 )
+from mqe.core.backtest import simulate_trades_fast
+from mqe.core.metrics import MetricsResult, calculate_metrics
+from mqe.core.portfolio import PortfolioResult, PortfolioSimulator
 from mqe.core.strategy import MultiPairStrategy
 from mqe.data.fetch import load_multi_pair_data
-from mqe.io import save_json
+from mqe.io import save_json, save_trades_csv
+from mqe.report import print_report, save_markdown_report
 from mqe.stage1 import run_stage1_pair
 from mqe.stage2 import run_stage2
 
@@ -64,10 +74,127 @@ def _extract_strategy_params(stage1_result: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in stage1_result.items() if k in _STRATEGY_PARAM_KEYS}
 
 
+def _metrics_to_dict(m: MetricsResult) -> dict[str, Any]:
+    """Convert MetricsResult dataclass to JSON-safe dict."""
+    d = dataclasses.asdict(m)
+    # Convert numpy types to Python natives
+    for k, v in d.items():
+        if isinstance(v, (np.integer,)):
+            d[k] = int(v)
+        elif isinstance(v, (np.floating,)):
+            d[k] = float(v)
+        elif isinstance(v, np.ndarray):
+            d[k] = v.tolist()
+    return d
+
+
+def run_final_evaluation(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    pair_params: dict[str, dict[str, Any]],
+    stage2_result: dict[str, Any],
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Run final evaluation with best params from both stages.
+
+    Runs full per-pair backtests and portfolio sim to produce complete
+    trades and metrics for reporting.
+
+    Returns:
+        Dict with per_pair_metrics, portfolio_metrics, portfolio_result.
+    """
+    logger.info("Final evaluation: running full backtests with best params")
+    eval_dir = output_dir / "evaluation"
+    eval_dir.mkdir(exist_ok=True)
+    per_pair_dir = eval_dir / "per_pair_trades"
+    per_pair_dir.mkdir(exist_ok=True)
+
+    # ── Per-pair full backtests ──
+    per_pair_metrics: dict[str, dict[str, Any]] = {}
+
+    for symbol in pair_signals:
+        data = all_data[symbol]
+        buy, sell, atr, _ = pair_signals[symbol]
+        params = pair_params.get(symbol, {})
+
+        result = simulate_trades_fast(
+            symbol, data, buy, sell,
+            atr_values=atr,
+            start_idx=MIN_WARMUP_BARS,
+            end_idx=len(data[BASE_TF]),
+            allow_flip=bool(params.get("allow_flip", 0)),
+            hard_stop_mult=float(params.get("hard_stop_mult", 2.5)),
+            trail_mult=float(params.get("trail_mult", 3.0)),
+            max_hold_bars=int(params.get("max_hold_bars", 168)),
+        )
+
+        metrics = calculate_metrics(
+            result.trades, result.backtest_days, start_equity=STARTING_EQUITY,
+        )
+        per_pair_metrics[symbol] = _metrics_to_dict(metrics)
+
+        # Save per-pair trades
+        safe_name = symbol.replace("/", "_")
+        save_trades_csv(per_pair_dir / f"{safe_name}.csv", result.trades)
+
+    save_json(eval_dir / "per_pair_metrics.json", per_pair_metrics)
+
+    # ── Portfolio sim with best S2 params ──
+    s2_params = stage2_result.get("portfolio_params", {})
+    cluster_max_val = s2_params.get("cluster_max", 2)
+
+    sim = PortfolioSimulator(
+        pair_data=all_data,
+        pair_signals=pair_signals,
+        pair_params=pair_params,
+        max_concurrent=s2_params.get("max_concurrent", 5),
+        cluster_max={},  # same as Stage 2 objective
+        portfolio_heat=s2_params.get("portfolio_heat", 0.05),
+        starting_equity=STARTING_EQUITY,
+    )
+    portfolio_result = sim.run()
+
+    # Portfolio-level metrics from all trades
+    n_bars = len(portfolio_result.equity_curve)
+    portfolio_backtest_days = max(1, n_bars // 24)
+
+    portfolio_metrics = calculate_metrics(
+        portfolio_result.all_trades, portfolio_backtest_days,
+        start_equity=STARTING_EQUITY,
+    )
+    portfolio_metrics_dict = _metrics_to_dict(portfolio_metrics)
+    portfolio_metrics_dict["portfolio_max_drawdown"] = float(portfolio_result.max_drawdown)
+    portfolio_metrics_dict["max_positions_open"] = portfolio_result.max_positions_open
+    portfolio_metrics_dict["peak_equity"] = float(portfolio_result.peak_equity)
+
+    save_json(eval_dir / "portfolio_metrics.json", portfolio_metrics_dict)
+    save_trades_csv(eval_dir / "portfolio_trades.csv", portfolio_result.all_trades)
+
+    total_pair_trades = sum(
+        m.get("trades", 0) for m in per_pair_metrics.values()
+    )
+    logger.info(
+        "Final evaluation: %d per-pair trades, %d portfolio trades",
+        total_pair_trades, len(portfolio_result.all_trades),
+    )
+
+    return {
+        "per_pair_metrics": per_pair_metrics,
+        "portfolio_metrics": portfolio_metrics_dict,
+        "portfolio_result_summary": {
+            "equity": float(portfolio_result.equity),
+            "max_drawdown": float(portfolio_result.max_drawdown),
+            "total_trades": len(portfolio_result.all_trades),
+            "max_positions_open": portfolio_result.max_positions_open,
+            "peak_equity": float(portfolio_result.peak_equity),
+        },
+    }
+
+
 def precompute_all_signals(
     pair_data: dict[str, dict[str, pd.DataFrame]],
-    pair_params: Dict[str, dict[str, Any]],
-    btc_stage1_params: Optional[dict[str, Any]] = None,
+    pair_params: dict[str, dict[str, Any]],
+    btc_stage1_params: dict[str, Any] | None = None,
 ) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """Pre-compute signals for all pairs using Stage 1 best params.
 
@@ -102,7 +229,7 @@ def run_stage1_all_pairs(
     all_data: dict[str, dict[str, pd.DataFrame]],
     n_trials: int,
     max_workers: int | None = None,
-) -> Dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Run Stage 1 for all pairs in parallel.
 
     Args:
@@ -117,7 +244,7 @@ def run_stage1_all_pairs(
     if max_workers is None:
         max_workers = min(len(symbols), max(1, (os.cpu_count() or 4) - 1))
 
-    results: Dict[str, dict[str, Any]] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {
@@ -200,16 +327,30 @@ def run_pipeline(
     )
     save_json(output_dir / "stage2_result.json", stage2_result)
 
-    # ── 5. Save combined results ──
+    # ── 5. Final evaluation ──
+    eval_result = run_final_evaluation(
+        all_data, pair_signals, pair_params, stage2_result, output_dir,
+    )
+
+    # ── 6. Save combined results ──
     combined: dict[str, Any] = {
         "symbols": symbols,
         "stage1_trials": stage1_trials,
         "stage2_trials": stage2_trials,
         "tag": tag,
+        "hours": hours,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "stage1_results": stage1_results,
         "stage2_results": stage2_result,
     }
     save_json(output_dir / "pipeline_result.json", combined)
+
+    # ── 7. Analyze + Report ──
+    analysis = analyze_run(combined, eval_result)
+    print_report(analysis, combined, eval_result)
+    save_markdown_report(
+        output_dir / "report.md", combined, eval_result, analysis,
+    )
 
     logger.info("Pipeline complete. Results saved to %s", output_dir)
     return combined

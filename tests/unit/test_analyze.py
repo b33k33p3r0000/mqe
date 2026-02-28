@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mqe.analyze import analyze_pair, analyze_portfolio, analyze_run
+from mqe.analyze import _normalize_metrics, analyze_pair, analyze_portfolio, analyze_run
 
 
 # ─── FIXTURES ─────────────────────────────────────────────────────────────────
@@ -233,3 +233,75 @@ class TestAnalyzeRun:
             assert pair_result["verdict"] == "FAIL"
         # Portfolio also FAIL because majority failed
         assert result["portfolio"]["verdict"] == "FAIL"
+
+    def test_analyze_run_with_eval_result(self):
+        """analyze_run uses eval_result metrics when provided."""
+        pipeline_result = {
+            "stage1_results": {
+                "BTC/USDT": {"metrics": _bad_metrics()},
+            },
+            "stage2_results": _good_stage2(),
+        }
+        # eval_result overrides Stage 1 metrics with full backtest data
+        eval_result = {
+            "per_pair_metrics": {
+                "BTC/USDT": _metrics_result_style(),
+            },
+            "portfolio_metrics": _metrics_result_style(),
+        }
+        result = analyze_run(pipeline_result, eval_result)
+        # Should use eval metrics (PASS), not Stage 1 (FAIL)
+        assert result["per_pair"][0]["verdict"] == "PASS"
+        assert "portfolio_metrics" in result["portfolio"]
+
+
+# ─── NORMALIZE METRICS TESTS ───────────────────────────────────────────────
+
+
+def _metrics_result_style() -> dict:
+    """Metrics dict matching MetricsResult key names."""
+    return {
+        "trades_per_year": 100.0,
+        "sharpe_ratio_equity_based": 1.8,
+        "calmar_ratio": 4.0,
+        "max_drawdown": -6.0,
+        "win_rate": 55.0,
+        "sortino_ratio": 2.5,
+        "profit_factor": 1.8,
+        "total_pnl_pct": 25.0,
+        "trades": 100,
+        "expectancy": 50.0,
+    }
+
+
+class TestNormalizeMetrics:
+    """Tests for _normalize_metrics()."""
+
+    def test_legacy_keys(self):
+        """Old format keys (sharpe_equity, calmar, max_drawdown_pct) work."""
+        norm = _normalize_metrics(_good_metrics())
+        assert norm["sharpe"] == 1.5
+        assert norm["calmar"] == 3.0
+        assert norm["max_dd"] == 5.0
+
+    def test_metrics_result_keys(self):
+        """MetricsResult-style keys work."""
+        norm = _normalize_metrics(_metrics_result_style())
+        assert norm["sharpe"] == 1.8
+        assert norm["calmar"] == 4.0
+        assert norm["max_dd"] == 6.0  # abs of -6.0
+        assert norm["sortino"] == 2.5
+        assert norm["profit_factor"] == 1.8
+
+    def test_empty_dict_defaults_to_zero(self):
+        """Empty dict produces all zeros."""
+        norm = _normalize_metrics({})
+        assert norm["sharpe"] == 0
+        assert norm["calmar"] == 0
+        assert norm["trades_per_year"] == 0
+
+    def test_analyze_pair_with_metrics_result(self):
+        """analyze_pair works with MetricsResult-style dict."""
+        result = analyze_pair("BTC/USDT", _metrics_result_style())
+        assert result["verdict"] == "PASS"
+        assert result["metrics_summary"]["sharpe"] == 1.8
