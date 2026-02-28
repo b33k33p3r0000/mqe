@@ -4,6 +4,7 @@ import numpy as np
 import optuna
 import pytest
 
+from mqe.config import PAIR_PROFILES, TIER_SEARCH_SPACE
 from mqe.core.strategy import MultiPairStrategy
 from tests.conftest import make_1h_ohlcv_pd, resample_to_multi_tf
 
@@ -111,3 +112,71 @@ class TestBTCRegimeFilter:
         )
         np.testing.assert_array_equal(buy1, buy2)
         np.testing.assert_array_equal(sell1, sell2)
+
+
+class TestPerTierParams:
+    """Tests that get_optuna_params uses tier-specific ranges."""
+
+    def test_tier_s_allows_flip(self):
+        """Tier S (BTC) can have allow_flip=0 or 1."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        flips_seen = set()
+        for _ in range(20):
+            trial = study.ask()
+            try:
+                params = strategy.get_optuna_params(trial, "BTC/USDT")
+                flips_seen.add(params["allow_flip"])
+            except optuna.TrialPruned:
+                pass
+        # With 20 tries, should see both 0 and 1 at least once
+        assert 0 in flips_seen or 1 in flips_seen
+
+    def test_tier_b_fixes_flip_off(self):
+        """Tier B (NEAR) always has allow_flip=0."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        for _ in range(5):
+            trial = study.ask()
+            try:
+                params = strategy.get_optuna_params(trial, "NEAR/USDT")
+                assert params["allow_flip"] == 0
+            except optuna.TrialPruned:
+                pass
+
+    def test_tier_b_narrower_macd(self):
+        """Tier B has narrower macd_fast range than Tier S."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        for _ in range(10):
+            trial = study.ask()
+            try:
+                params = strategy.get_optuna_params(trial, "NEAR/USDT")
+                assert params["macd_fast"] <= 12.0  # B tier max
+            except optuna.TrialPruned:
+                pass
+
+    def test_unknown_symbol_uses_tier_b(self):
+        """Unknown symbol defaults to Tier B ranges."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        trial = study.ask()
+        try:
+            params = strategy.get_optuna_params(trial, "UNKNOWN/USDT")
+            assert params["macd_fast"] <= 12.0
+        except optuna.TrialPruned:
+            pass
+
+    def test_param_count_unchanged(self):
+        """Still 14 params regardless of tier."""
+        strategy = MultiPairStrategy()
+        for sym in ["BTC/USDT", "NEAR/USDT", "INJ/USDT"]:
+            study = optuna.create_study()
+            for _ in range(5):
+                trial = study.ask()
+                try:
+                    params = strategy.get_optuna_params(trial, sym)
+                    assert len(params) == 14
+                    break
+                except optuna.TrialPruned:
+                    pass

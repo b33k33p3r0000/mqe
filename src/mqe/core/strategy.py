@@ -24,7 +24,7 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from mqe.config import ATR_PERIOD, BASE_TF
+from mqe.config import ATR_PERIOD, BASE_TF, PAIR_PROFILES, TIER_SEARCH_SPACE
 from mqe.core.backtest import precompute_timeframe_indices
 from mqe.core.indicators import adx, atr, macd, rsi
 
@@ -73,35 +73,52 @@ class MultiPairStrategy(BaseStrategy):
         symbol: str | None = None,
         allow_flip_override: Optional[int] = None,
     ) -> dict[str, Any]:
-        """14 Optuna parameters per pair."""
+        """14 Optuna parameters per pair, with tier-specific ranges."""
         params: dict[str, Any] = {}
 
-        # -- Layers 1-3 (from QRE) --
-        params["macd_fast"] = trial.suggest_float("macd_fast", 1.0, 20.0)
-        params["macd_slow"] = trial.suggest_int("macd_slow", 10, 45)
+        # Resolve tier-specific search space
+        tier = PAIR_PROFILES.get(symbol, {}).get("tier", "B") if symbol else "S"
+        space = TIER_SEARCH_SPACE.get(tier, TIER_SEARCH_SPACE["B"])
+
+        # -- Layers 1-3: MACD + RSI --
+        params["macd_fast"] = trial.suggest_float("macd_fast", *space["macd_fast"])
+        params["macd_slow"] = trial.suggest_int("macd_slow", *space["macd_slow"])
         if params["macd_slow"] - params["macd_fast"] < 5:
             raise optuna.TrialPruned("macd_slow - macd_fast < 5")
 
-        params["macd_signal"] = trial.suggest_int("macd_signal", 3, 15)
-        params["rsi_period"] = trial.suggest_int("rsi_period", 3, 30)
-        params["rsi_lower"] = trial.suggest_int("rsi_lower", 20, 40)
-        params["rsi_upper"] = trial.suggest_int("rsi_upper", 60, 80)
-        params["rsi_lookback"] = trial.suggest_int("rsi_lookback", 1, 4)
-        params["trend_tf"] = trial.suggest_categorical(
-            "trend_tf", ["4h", "8h", "1d"]
+        params["macd_signal"] = trial.suggest_int("macd_signal", *space["macd_signal"])
+        params["rsi_period"] = trial.suggest_int("rsi_period", *space["rsi_period"])
+        params["rsi_lower"] = trial.suggest_int("rsi_lower", *space["rsi_lower"])
+        params["rsi_upper"] = trial.suggest_int("rsi_upper", *space["rsi_upper"])
+        params["rsi_lookback"] = trial.suggest_int(
+            "rsi_lookback", *space["rsi_lookback"]
         )
+
+        # -- Layer 3: HTF trend --
+        params["trend_tf"] = trial.suggest_categorical("trend_tf", ["4h", "8h", "1d"])
         params["trend_strict"] = trial.suggest_int("trend_strict", 1, 1)
 
-        flip_val = allow_flip_override if allow_flip_override is not None else 0
-        params["allow_flip"] = trial.suggest_int("allow_flip", flip_val, flip_val)
+        # -- Mode: allow_flip (tier-driven) --
+        flip_range = space["allow_flip"]
+        if allow_flip_override is not None:
+            flip_range = (allow_flip_override, allow_flip_override)
+        params["allow_flip"] = trial.suggest_int("allow_flip", *flip_range)
 
-        # -- Layer 5: ADX (NEW) --
-        params["adx_threshold"] = trial.suggest_float("adx_threshold", 15.0, 30.0)
+        # -- Layer 5: ADX --
+        params["adx_threshold"] = trial.suggest_float(
+            "adx_threshold", *space["adx_threshold"]
+        )
 
-        # -- Exit params (NEW) --
-        params["trail_mult"] = trial.suggest_float("trail_mult", 2.0, 4.0)
-        params["hard_stop_mult"] = trial.suggest_float("hard_stop_mult", 1.5, 3.0)
-        params["max_hold_bars"] = trial.suggest_int("max_hold_bars", 48, 168)
+        # -- Exit params --
+        params["trail_mult"] = trial.suggest_float(
+            "trail_mult", *space["trail_mult"]
+        )
+        params["hard_stop_mult"] = trial.suggest_float(
+            "hard_stop_mult", *space["hard_stop_mult"]
+        )
+        params["max_hold_bars"] = trial.suggest_int(
+            "max_hold_bars", *space["max_hold_bars"]
+        )
 
         return params
 
