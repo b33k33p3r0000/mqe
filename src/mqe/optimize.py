@@ -30,6 +30,7 @@ import pandas as pd
 
 from mqe.analyze import analyze_run
 from mqe.config import (
+    ANCHORED_WF_SPLITS,
     BASE_TF,
     CLUSTER_DEFINITIONS,
     CORRELATION_GATE_THRESHOLD,
@@ -46,6 +47,7 @@ from mqe.core.portfolio import PortfolioResult, PortfolioSimulator
 from mqe.core.strategy import MultiPairStrategy
 from mqe.data.fetch import load_multi_pair_data
 from mqe.io import save_json, save_trades_csv
+from mqe.notify import notify_complete, notify_start
 from mqe.report import print_report, save_markdown_report
 from mqe.risk.correlation import compute_pairwise_correlation
 from mqe.stage1 import run_stage1_pair
@@ -317,6 +319,15 @@ def run_pipeline(
         len(symbols), stage1_trials, stage2_trials,
     )
 
+    n_splits = len(ANCHORED_WF_SPLITS)
+    notify_start(
+        symbols=symbols,
+        n_trials_s1=stage1_trials,
+        n_trials_s2=stage2_trials,
+        n_splits=n_splits,
+        run_tag=tag or None,
+    )
+
     # ── 1. Fetch data ──
     all_data = fetch_all_data(symbols, hours)
 
@@ -370,6 +381,7 @@ def run_pipeline(
     save_markdown_report(
         output_dir / "report.md", combined, eval_result, analysis,
     )
+    notify_complete(analysis)
 
     logger.info("Pipeline complete. Results saved to %s", output_dir)
     return combined
