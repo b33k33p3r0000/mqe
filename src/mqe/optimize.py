@@ -31,6 +31,8 @@ import pandas as pd
 from mqe.analyze import analyze_run
 from mqe.config import (
     BASE_TF,
+    CLUSTER_DEFINITIONS,
+    CORRELATION_GATE_THRESHOLD,
     DEFAULT_TRIALS_STAGE1,
     DEFAULT_TRIALS_STAGE2,
     DISCORD_WEBHOOK_RUNS,
@@ -143,14 +145,31 @@ def run_final_evaluation(
     s2_params = stage2_result.get("portfolio_params", {})
     cluster_max_val = s2_params.get("cluster_max", 2)
 
+    # Build cluster_max dict from the single optimized value
+    cluster_max_dict = {
+        cluster: cluster_max_val for cluster in CLUSTER_DEFINITIONS
+    }
+
+    # Compute correlation matrix from 1H close prices
+    from mqe.risk.correlation import compute_pairwise_correlation
+    returns_dict = {}
+    for symbol in pair_signals:
+        close = all_data[symbol][BASE_TF]["close"]
+        returns_dict[symbol] = close.pct_change().dropna()
+    corr_matrix = compute_pairwise_correlation(returns_dict)
+
     sim = PortfolioSimulator(
         pair_data=all_data,
         pair_signals=pair_signals,
         pair_params=pair_params,
         max_concurrent=s2_params.get("max_concurrent", 5),
-        cluster_max={},  # same as Stage 2 objective
+        cluster_max=cluster_max_dict,
         portfolio_heat=s2_params.get("portfolio_heat", 0.05),
         starting_equity=STARTING_EQUITY,
+        corr_matrix=corr_matrix,
+        corr_gate_threshold=s2_params.get(
+            "corr_gate_threshold", CORRELATION_GATE_THRESHOLD
+        ),
     )
     portfolio_result = sim.run()
 
