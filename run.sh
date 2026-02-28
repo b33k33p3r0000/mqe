@@ -93,12 +93,12 @@ if [[ $# -gt 0 ]]; then
                 echo "  $(basename "$LATEST")"
                 echo "(Ctrl+C to detach)"
                 echo ""
-                tail -f "$LATEST"
+                tail -50 -f "$LATEST"
             elif [ ${#ACTIVE_LOGS[@]} -eq 1 ]; then
                 echo "Attaching to: $(basename "${ACTIVE_LOGS[0]}")"
                 echo "(Ctrl+C to detach — run continues in background)"
                 echo ""
-                tail -f "${ACTIVE_LOGS[0]}"
+                tail -50 -f "${ACTIVE_LOGS[0]}"
             else
                 echo "Multiple active runs detected:"
                 echo ""
@@ -116,7 +116,7 @@ if [[ $# -gt 0 ]]; then
                     echo "Attaching to: $(basename "${ACTIVE_LOGS[$pick]}")"
                     echo "(Ctrl+C to detach — run continues in background)"
                     echo ""
-                    tail -f "${ACTIVE_LOGS[$pick]}"
+                    tail -50 -f "${ACTIVE_LOGS[$pick]}"
                 else
                     echo "Invalid choice"
                     exit 1
@@ -126,7 +126,7 @@ if [[ $# -gt 0 ]]; then
             ;;
         logs)
             echo "Recent logs:"
-            ls -lht "$LOG_DIR"/*.log 2>/dev/null | head -10 || echo "  (no logs)"
+            ls -lht "$LOG_DIR"/*.log 2>/dev/null | head -50 || echo "  (no logs)"
             exit 0
             ;;
         kill)
