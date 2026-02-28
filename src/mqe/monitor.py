@@ -297,11 +297,13 @@ def find_active_run(results_dir: Path) -> Optional[Path]:
     for d in sorted(results_dir.iterdir()):
         if not d.is_dir() or d.name.startswith("."):
             continue
-        # Active = no pipeline_result.json AND has stage1/ with files
+        # Active = no pipeline_result.json AND (has stage1/ files OR very recent)
         if (d / "pipeline_result.json").exists():
             continue
         s1_dir = d / "stage1"
-        if s1_dir.exists() and any(s1_dir.glob("*.json")):
+        has_s1_files = s1_dir.exists() and any(s1_dir.glob("*.json"))
+        is_recent = (time.time() - d.stat().st_mtime) < 300  # 5 min
+        if has_s1_files or is_recent:
             candidates.append(d)
 
     if not candidates:

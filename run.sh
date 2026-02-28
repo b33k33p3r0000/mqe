@@ -51,6 +51,8 @@ Process management:
   ./run.sh attach          Attach to running/latest log
   ./run.sh kill            Kill running MQE process
   ./run.sh logs            List recent log files
+  ./run.sh monitor         Live dashboard for active run
+  ./run.sh monitor --once  Single snapshot of active run
 
 EOF
 }
@@ -191,6 +193,16 @@ if [[ $# -gt 0 ]]; then
                 fi
             fi
             exit 0
+            ;;
+        monitor)
+            shift
+            MONITOR_ARGS=""
+            if [[ $# -gt 0 && "$1" == "--once" ]]; then
+                MONITOR_ARGS="--once"
+            else
+                MONITOR_ARGS="--live"
+            fi
+            exec uv run python -m mqe.monitor --results-dir "$SCRIPT_DIR/results" $MONITOR_ARGS
             ;;
     esac
 fi
