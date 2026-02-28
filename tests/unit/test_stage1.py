@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from mqe.stage1 import (
+    ProgressCallback,
     compute_objective_score,
     compute_awf_splits,
     build_objective,
@@ -221,3 +222,90 @@ class TestCreateSampler:
         import optuna
         sampler = create_sampler(seed=42, n_trials=100)
         assert isinstance(sampler, optuna.samplers.TPESampler)
+
+
+# ─── ProgressCallback ─────────────────────────────────────────────────────
+
+
+class TestProgressCallback:
+    def test_writes_progress_file(self, tmp_path):
+        """Callback writes progress JSON after interval trials."""
+        from unittest.mock import MagicMock
+
+        cb = ProgressCallback(
+            symbol="BTC/USDT",
+            output_dir=tmp_path,
+            n_trials_total=1000,
+            interval=500,
+        )
+
+        study = MagicMock()
+        study.best_value = 3.45
+        study.best_trial.user_attrs = {
+            "sharpe_equity": 2.81,
+            "max_drawdown": -4.2,
+            "trades": 127,
+            "total_pnl_pct": 42.3,
+        }
+
+        # Trial 499 (0-indexed) = 500th trial — should write
+        trial = MagicMock()
+        trial.number = 499
+        cb(study, trial)
+
+        progress_file = tmp_path / "stage1" / "BTC_USDT_progress.json"
+        assert progress_file.exists()
+
+        import json
+        data = json.loads(progress_file.read_text())
+        assert data["symbol"] == "BTC/USDT"
+        assert data["trials_completed"] == 500
+        assert data["trials_total"] == 1000
+        assert data["best_value"] == 3.45
+        assert data["best_sharpe"] == 2.81
+
+    def test_skips_non_interval_trials(self, tmp_path):
+        """Callback skips writing for non-interval trials."""
+        from unittest.mock import MagicMock
+
+        cb = ProgressCallback(
+            symbol="ETH/USDT",
+            output_dir=tmp_path,
+            n_trials_total=1000,
+            interval=500,
+        )
+
+        study = MagicMock()
+        study.best_value = 1.0
+        study.best_trial.user_attrs = {}
+
+        trial = MagicMock()
+        trial.number = 100  # 101st trial — not at interval
+        cb(study, trial)
+
+        progress_file = tmp_path / "stage1" / "ETH_USDT_progress.json"
+        assert not progress_file.exists()
+
+    def test_atomic_write(self, tmp_path):
+        """Progress file is valid JSON (atomic write)."""
+        from unittest.mock import MagicMock
+
+        cb = ProgressCallback(
+            symbol="SOL/USDT",
+            output_dir=tmp_path,
+            n_trials_total=500,
+            interval=500,
+        )
+
+        study = MagicMock()
+        study.best_value = 2.0
+        study.best_trial.user_attrs = {"sharpe_equity": 1.5}
+
+        trial = MagicMock()
+        trial.number = 499
+        cb(study, trial)
+
+        import json
+        progress_file = tmp_path / "stage1" / "SOL_USDT_progress.json"
+        data = json.loads(progress_file.read_text())
+        assert "symbol" in data

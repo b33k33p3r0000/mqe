@@ -17,8 +17,13 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import math
+import os
+import tempfile
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
@@ -302,6 +307,69 @@ def build_objective(
         return float(np.mean(split_scores))
 
     return objective
+
+
+# ─── PROGRESS CALLBACK ─────────────────────────────────────────────────────
+
+
+class ProgressCallback:
+    """Optuna callback that writes progress JSON every N trials.
+
+    Writes to: {output_dir}/stage1/{SYMBOL}_progress.json
+    Atomic write via tmp file + rename to prevent partial reads.
+    """
+
+    def __init__(
+        self,
+        symbol: str,
+        output_dir: Path,
+        n_trials_total: int,
+        interval: int = 500,
+    ) -> None:
+        self.symbol = symbol
+        self.safe_name = symbol.replace("/", "_")
+        self.output_dir = Path(output_dir)
+        self.n_trials_total = n_trials_total
+        self.interval = interval
+        self._s1_dir = self.output_dir / "stage1"
+        self._s1_dir.mkdir(parents=True, exist_ok=True)
+
+    def __call__(
+        self,
+        study: optuna.study.Study,
+        trial: optuna.trial.FrozenTrial,
+    ) -> None:
+        if (trial.number + 1) % self.interval != 0:
+            return
+
+        best_attrs: dict[str, Any] = {}
+        try:
+            best_attrs = study.best_trial.user_attrs
+        except ValueError:
+            pass
+
+        progress = {
+            "symbol": self.symbol,
+            "trials_completed": trial.number + 1,
+            "trials_total": self.n_trials_total,
+            "best_value": study.best_value if study.best_trial else 0.0,
+            "best_sharpe": best_attrs.get("sharpe_equity", 0.0),
+            "best_drawdown": best_attrs.get("max_drawdown", 0.0),
+            "best_trades": best_attrs.get("trades", 0),
+            "best_pnl_pct": best_attrs.get("total_pnl_pct", 0.0),
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+        }
+
+        progress_path = self._s1_dir / f"{self.safe_name}_progress.json"
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self._s1_dir), suffix=".tmp",
+            )
+            with os.fdopen(fd, "w") as f:
+                json.dump(progress, f, indent=2)
+            os.replace(tmp_path, str(progress_path))
+        except OSError:
+            logger.debug("Failed to write progress for %s", self.symbol)
 
 
 # ─── RUN STAGE 1 PER PAIR ───────────────────────────────────────────────────
