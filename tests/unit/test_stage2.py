@@ -190,6 +190,20 @@ class TestRunStage2:
         assert "pareto_front_size" in result
         assert result["pareto_front_size"] >= 0
 
+    def test_result_has_cluster_max(self, synthetic_inputs):
+        """Stage 2 result portfolio_params includes cluster_max."""
+        pair_data, pair_signals, pair_params = synthetic_inputs
+        result = run_stage2(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+            n_trials=5,
+            seed=42,
+        )
+        assert "cluster_max" in result["portfolio_params"]
+        assert isinstance(result["portfolio_params"]["cluster_max"], int)
+        assert 1 <= result["portfolio_params"]["cluster_max"] <= 3
+
     def test_result_has_n_trials(self, synthetic_inputs):
         """Result reports number of trials."""
         pair_data, pair_signals, pair_params = synthetic_inputs

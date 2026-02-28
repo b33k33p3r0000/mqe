@@ -26,6 +26,7 @@ import optuna
 import pandas as pd
 
 from mqe.config import (
+    CLUSTER_DEFINITIONS,
     DEFAULT_TRIALS_STAGE2,
     MIN_DRAWDOWN_FLOOR,
     STARTING_EQUITY,
@@ -61,15 +62,21 @@ def build_portfolio_objective(
         portfolio_heat = trial.suggest_float("portfolio_heat", 0.03, 0.10)
         corr_gate_threshold = trial.suggest_float("corr_gate_threshold", 0.60, 0.90)
 
+        # Build cluster_max dict from the single optimized value
+        cluster_max_dict = {
+            cluster: cluster_max for cluster in CLUSTER_DEFINITIONS
+        }
+
         # Run portfolio simulation
         sim = PortfolioSimulator(
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
             max_concurrent=max_concurrent,
-            cluster_max={},  # cluster_max param used for penalty only
+            cluster_max=cluster_max_dict,
             portfolio_heat=portfolio_heat,
             starting_equity=STARTING_EQUITY,
+            corr_gate_threshold=corr_gate_threshold,
         )
         result = sim.run()
 
