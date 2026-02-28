@@ -1,0 +1,113 @@
+"""Unit tests for MQE 6-layer entry funnel strategy."""
+
+import numpy as np
+import optuna
+import pytest
+
+from mqe.core.strategy import MultiPairStrategy
+from tests.conftest import make_1h_ohlcv_pd, resample_to_multi_tf
+
+
+class TestOptunaParams:
+    def test_param_count(self):
+        """Strategy has 14 Optuna params."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        trial = study.ask()
+        try:
+            params = strategy.get_optuna_params(trial, "BTC/USDT")
+        except optuna.TrialPruned:
+            params = strategy.get_optuna_params(study.ask(), "BTC/USDT")
+        assert len(params) == 14
+
+    def test_new_params_present(self):
+        """New MQE params: adx_threshold, trail_mult, hard_stop_mult, max_hold_bars."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        for _ in range(20):
+            trial = study.ask()
+            try:
+                params = strategy.get_optuna_params(trial, "BTC/USDT")
+                assert "adx_threshold" in params
+                assert "trail_mult" in params
+                assert "hard_stop_mult" in params
+                assert "max_hold_bars" in params
+                break
+            except optuna.TrialPruned:
+                continue
+
+    def test_macd_constraint(self):
+        """macd_slow - macd_fast < 5 raises TrialPruned."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        pruned_count = 0
+        for _ in range(50):
+            trial = study.ask()
+            try:
+                strategy.get_optuna_params(trial, "BTC/USDT")
+            except optuna.TrialPruned:
+                pruned_count += 1
+        assert pruned_count > 0
+
+
+class TestSignalComputation:
+    def test_returns_4_tuple(self):
+        """precompute_signals returns (buy, sell, atr, signal_strength)."""
+        strategy = MultiPairStrategy()
+        df = make_1h_ohlcv_pd(n_bars=500, seed=42)
+        data = resample_to_multi_tf(df)
+        params = strategy.get_default_params()
+        result = strategy.precompute_signals(data, params)
+        assert len(result) == 4
+        buy, sell, atr_arr, sig_str = result
+        assert buy.dtype == np.bool_
+        assert sell.dtype == np.bool_
+        assert len(buy) == len(df)
+        assert len(atr_arr) == len(df)
+        assert len(sig_str) == len(df)
+
+    def test_atr_returned(self):
+        strategy = MultiPairStrategy()
+        df = make_1h_ohlcv_pd(n_bars=500, seed=42)
+        data = resample_to_multi_tf(df)
+        params = strategy.get_default_params()
+        _, _, atr_arr, _ = strategy.precompute_signals(data, params)
+        assert atr_arr.dtype == np.float64
+        valid_atr = atr_arr[~np.isnan(atr_arr)]
+        assert (valid_atr > 0).all()
+
+    def test_signal_strength_computed(self):
+        """signal_strength = macd_histogram/ATR + abs(RSI-50)/50."""
+        strategy = MultiPairStrategy()
+        df = make_1h_ohlcv_pd(n_bars=500, seed=42)
+        data = resample_to_multi_tf(df)
+        params = strategy.get_default_params()
+        _, _, _, sig_str = strategy.precompute_signals(data, params)
+        assert sig_str.dtype == np.float64
+        valid = sig_str[~np.isnan(sig_str)]
+        assert (valid >= 0).all()
+
+    def test_no_signal_in_warmup(self):
+        strategy = MultiPairStrategy()
+        df = make_1h_ohlcv_pd(n_bars=500, seed=42)
+        data = resample_to_multi_tf(df)
+        params = strategy.get_default_params()
+        buy, sell, _, _ = strategy.precompute_signals(data, params)
+        assert not buy[:50].any()
+        assert not sell[:50].any()
+
+
+class TestBTCRegimeFilter:
+    def test_btc_regime_not_applied_to_btc(self):
+        strategy = MultiPairStrategy()
+        df = make_1h_ohlcv_pd(n_bars=500, seed=42)
+        data = resample_to_multi_tf(df)
+        params = strategy.get_default_params()
+        buy1, sell1, _, _ = strategy.precompute_signals(
+            data, params, symbol="BTC/USDT"
+        )
+        buy2, sell2, _, _ = strategy.precompute_signals(
+            data, params, symbol="BTC/USDT", btc_regime_data=data
+        )
+        np.testing.assert_array_equal(buy1, buy2)
+        np.testing.assert_array_equal(sell1, sell2)
