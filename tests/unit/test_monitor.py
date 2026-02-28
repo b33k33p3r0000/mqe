@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from mqe.monitor import RunInfo, load_run, scan_results, render_table
+from mqe.monitor import (
+    RunInfo, load_run, scan_results, render_table,
+    LivePairStatus, load_live_run, render_live_table, find_active_run,
+    _format_elapsed, _progress_bar,
+)
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -197,3 +201,232 @@ class TestRenderTable:
     def test_render_empty(self) -> None:
         table = render_table([])
         assert table.row_count == 0
+
+
+# ─── _format_elapsed ────────────────────────────────────────────────────────
+
+
+class TestFormatElapsed:
+    def test_hours_and_minutes(self) -> None:
+        assert _format_elapsed(6120) == "1h42m"
+
+    def test_minutes_only(self) -> None:
+        assert _format_elapsed(300) == "5m"
+
+    def test_zero(self) -> None:
+        assert _format_elapsed(0) == "0m"
+
+    def test_large_hours(self) -> None:
+        assert _format_elapsed(36000) == "10h00m"
+
+
+# ─── _progress_bar ──────────────────────────────────────────────────────────
+
+
+class TestProgressBar:
+    def test_full(self) -> None:
+        bar = _progress_bar(100, 100, width=8)
+        assert bar == "\u2588" * 8
+
+    def test_empty(self) -> None:
+        bar = _progress_bar(0, 100, width=8)
+        assert bar == "\u2591" * 8
+
+    def test_half(self) -> None:
+        bar = _progress_bar(50, 100, width=8)
+        assert bar == "\u2588" * 4 + "\u2591" * 4
+
+    def test_zero_total(self) -> None:
+        bar = _progress_bar(0, 0, width=8)
+        assert bar == " " * 8
+
+    def test_over_100_clamped(self) -> None:
+        bar = _progress_bar(200, 100, width=8)
+        assert bar == "\u2588" * 8
+
+
+# ─── load_live_run ──────────────────────────────────────────────────────────
+
+
+class TestLoadLiveRun:
+    def test_detects_running_pairs(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "20260228_210000"
+        s1_dir = run_dir / "stage1"
+        s1_dir.mkdir(parents=True)
+
+        # One completed pair
+        _write_json(s1_dir / "BTC_USDT.json", {
+            "symbol": "BTC/USDT",
+            "objective_value": 3.45,
+            "sharpe_equity": 2.81,
+            "max_drawdown": -4.2,
+            "n_trials_completed": 50000,
+            "n_trials_requested": 50000,
+        })
+
+        # One running pair
+        _write_json(s1_dir / "ETH_USDT_progress.json", {
+            "symbol": "ETH/USDT",
+            "trials_completed": 31000,
+            "trials_total": 50000,
+            "best_value": 2.91,
+            "best_sharpe": 2.34,
+            "best_drawdown": -6.1,
+            "best_trades": 98,
+            "best_pnl_pct": 35.0,
+            "timestamp": "2026-02-28T22:15:30",
+        })
+
+        pairs = load_live_run(run_dir)
+        assert len(pairs) == 2
+
+        btc = next(p for p in pairs if p.symbol == "BTC/USDT")
+        assert btc.status == "done"
+        assert btc.trials_completed == 50000
+
+        eth = next(p for p in pairs if p.symbol == "ETH/USDT")
+        assert eth.status == "running"
+        assert eth.trials_completed == 31000
+        assert eth.best_sharpe == 2.34
+
+    def test_empty_dir_returns_empty_list(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "20260228_220000"
+        run_dir.mkdir(parents=True)
+        pairs = load_live_run(run_dir)
+        assert pairs == []
+
+    def test_no_stage1_dir_returns_empty(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "20260228_230000"
+        run_dir.mkdir(parents=True)
+        pairs = load_live_run(run_dir)
+        assert pairs == []
+
+    def test_done_pairs_sorted_first(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "20260228_210000"
+        s1_dir = run_dir / "stage1"
+        s1_dir.mkdir(parents=True)
+
+        _write_json(s1_dir / "ETH_USDT_progress.json", {
+            "symbol": "ETH/USDT",
+            "trials_completed": 10000,
+            "trials_total": 50000,
+            "best_value": 1.0,
+            "best_sharpe": 1.0,
+            "best_drawdown": -5.0,
+            "best_trades": 50,
+            "best_pnl_pct": 10.0,
+            "timestamp": "2026-02-28T22:00:00",
+        })
+
+        _write_json(s1_dir / "BTC_USDT.json", {
+            "symbol": "BTC/USDT",
+            "objective_value": 3.0,
+            "sharpe_equity": 2.0,
+            "max_drawdown": -3.0,
+            "n_trials_completed": 50000,
+            "n_trials_requested": 50000,
+        })
+
+        pairs = load_live_run(run_dir)
+        assert pairs[0].status == "done"
+        assert pairs[1].status == "running"
+
+    def test_pending_pairs_for_missing_symbols(self, tmp_path: Path) -> None:
+        """Pairs with neither done nor progress file are not listed (no way to know)."""
+        run_dir = tmp_path / "20260228_210000"
+        s1_dir = run_dir / "stage1"
+        s1_dir.mkdir(parents=True)
+
+        _write_json(s1_dir / "BTC_USDT.json", {
+            "symbol": "BTC/USDT",
+            "objective_value": 3.0,
+            "sharpe_equity": 2.0,
+            "max_drawdown": -3.0,
+            "n_trials_completed": 50000,
+            "n_trials_requested": 50000,
+        })
+
+        pairs = load_live_run(run_dir)
+        assert len(pairs) == 1
+
+
+# ─── render_live_table ──────────────────────────────────────────────────────
+
+
+class TestRenderLiveTable:
+    def test_render_with_pairs(self) -> None:
+        pairs = [
+            LivePairStatus(
+                symbol="BTC/USDT", status="done",
+                trials_completed=50000, trials_total=50000,
+                best_value=3.45, best_sharpe=2.81, best_drawdown=-4.2,
+            ),
+            LivePairStatus(
+                symbol="ETH/USDT", status="running",
+                trials_completed=31000, trials_total=50000,
+                best_value=2.91, best_sharpe=2.34, best_drawdown=-6.1,
+            ),
+        ]
+        table = render_live_table(pairs, tag="15pair-50k", elapsed_s=6120)
+        assert table is not None
+        assert table.row_count == 2
+
+    def test_render_empty_list(self) -> None:
+        table = render_live_table([], tag="test", elapsed_s=0)
+        assert table is not None
+        assert table.row_count == 0
+
+    def test_render_with_pending(self) -> None:
+        pairs = [
+            LivePairStatus(symbol="BTC/USDT", status="pending"),
+        ]
+        table = render_live_table(pairs, tag="test", elapsed_s=60)
+        assert table is not None
+        assert table.row_count == 1
+
+
+# ─── find_active_run ────────────────────────────────────────────────────────
+
+
+class TestFindActiveRun:
+    def test_finds_running_run(self, tmp_path: Path) -> None:
+        # Completed run
+        completed = tmp_path / "20260228_120000"
+        completed.mkdir()
+        _write_json(completed / "pipeline_result.json", {"symbols": []})
+
+        # Running run (no pipeline_result.json, has stage1/)
+        running = tmp_path / "20260228_210000"
+        s1_dir = running / "stage1"
+        s1_dir.mkdir(parents=True)
+        _write_json(s1_dir / "BTC_USDT.json", {"symbol": "BTC/USDT"})
+
+        result = find_active_run(tmp_path)
+        assert result is not None
+        assert result.name == "20260228_210000"
+
+    def test_returns_none_when_all_complete(self, tmp_path: Path) -> None:
+        completed = tmp_path / "20260228_120000"
+        completed.mkdir()
+        _write_json(completed / "pipeline_result.json", {"symbols": []})
+
+        result = find_active_run(tmp_path)
+        assert result is None
+
+    def test_returns_none_for_empty_dir(self, tmp_path: Path) -> None:
+        result = find_active_run(tmp_path)
+        assert result is None
+
+    def test_picks_most_recent(self, tmp_path: Path) -> None:
+        # Two running runs — should pick most recent
+        older = tmp_path / "20260228_100000"
+        (older / "stage1").mkdir(parents=True)
+        _write_json(older / "stage1" / "BTC_USDT.json", {"symbol": "BTC/USDT"})
+
+        newer = tmp_path / "20260228_200000"
+        (newer / "stage1").mkdir(parents=True)
+        _write_json(newer / "stage1" / "ETH_USDT.json", {"symbol": "ETH/USDT"})
+
+        result = find_active_run(tmp_path)
+        assert result is not None
+        assert result.name == "20260228_200000"

@@ -9,6 +9,8 @@ Usage:
     uv run python -m mqe.monitor --results-dir /path/to/results
     uv run python -m mqe.monitor --watch           # auto-refresh every 30s
     uv run python -m mqe.monitor smoke             # filter by name/tag
+    uv run python -m mqe.monitor --live            # live TUI for active run
+    uv run python -m mqe.monitor --once            # single live snapshot
 """
 
 from __future__ import annotations
@@ -65,6 +67,22 @@ class RunInfo:
     # S2 objectives
     worst_pair_calmar: Optional[float] = None
     s2_max_concurrent: Optional[int] = None
+
+
+@dataclass
+class LivePairStatus:
+    """Status of a single pair in a running optimization."""
+
+    symbol: str
+    status: str  # "done", "running", "pending"
+    trials_completed: int = 0
+    trials_total: int = 0
+    best_value: float = 0.0
+    best_sharpe: float = 0.0
+    best_drawdown: float = 0.0
+    best_trades: int = 0
+    best_pnl_pct: float = 0.0
+    timestamp: str = ""
 
 
 # ─── Data Loading ─────────────────────────────────────────────────────────────
@@ -214,7 +232,103 @@ def scan_results(
     return runs
 
 
+def load_live_run(run_dir: Path) -> List[LivePairStatus]:
+    """Read stage1/ directory and return per-pair live status.
+
+    - ``{SYMBOL}.json`` (no ``_progress`` suffix) = done pair.
+    - ``{SYMBOL}_progress.json`` = running pair.
+    - Sort: done first, then running.
+    """
+    s1_dir = run_dir / "stage1"
+    if not s1_dir.exists():
+        return []
+
+    pairs: List[LivePairStatus] = []
+
+    # Completed pairs: *.json excluding *_progress.json
+    for f in sorted(s1_dir.glob("*.json")):
+        if f.stem.endswith("_progress"):
+            continue
+        data = _load_json(f)
+        if data is None:
+            continue
+        pairs.append(LivePairStatus(
+            symbol=data.get("symbol", f.stem.replace("_", "/")),
+            status="done",
+            trials_completed=data.get("n_trials_completed", 0),
+            trials_total=data.get("n_trials_requested", 0),
+            best_value=data.get("objective_value", 0.0),
+            best_sharpe=data.get("sharpe_equity", 0.0),
+            best_drawdown=data.get("max_drawdown", 0.0),
+            best_trades=data.get("trades", 0),
+            best_pnl_pct=data.get("total_pnl_pct", 0.0),
+        ))
+
+    # Running pairs: *_progress.json
+    for f in sorted(s1_dir.glob("*_progress.json")):
+        data = _load_json(f)
+        if data is None:
+            continue
+        pairs.append(LivePairStatus(
+            symbol=data.get("symbol", f.stem.replace("_progress", "").replace("_", "/")),
+            status="running",
+            trials_completed=data.get("trials_completed", 0),
+            trials_total=data.get("trials_total", 0),
+            best_value=data.get("best_value", 0.0),
+            best_sharpe=data.get("best_sharpe", 0.0),
+            best_drawdown=data.get("best_drawdown", 0.0),
+            best_trades=data.get("best_trades", 0),
+            best_pnl_pct=data.get("best_pnl_pct", 0.0),
+            timestamp=data.get("timestamp", ""),
+        ))
+
+    return pairs
+
+
+def find_active_run(results_dir: Path) -> Optional[Path]:
+    """Find the most recent run directory without ``pipeline_result.json``.
+
+    Returns None if all runs are completed or directory is empty.
+    """
+    if not results_dir.exists():
+        return None
+
+    candidates: List[Path] = []
+    for d in sorted(results_dir.iterdir()):
+        if not d.is_dir() or d.name.startswith("."):
+            continue
+        # Active = no pipeline_result.json AND has stage1/ with files
+        if (d / "pipeline_result.json").exists():
+            continue
+        s1_dir = d / "stage1"
+        if s1_dir.exists() and any(s1_dir.glob("*.json")):
+            candidates.append(d)
+
+    if not candidates:
+        return None
+
+    # Most recent = last in sorted order (timestamp-based names)
+    return candidates[-1]
+
+
 # ─── Formatting Helpers ───────────────────────────────────────────────────────
+
+
+def _format_elapsed(seconds: int) -> str:
+    """Format seconds as Xh Ym."""
+    h, m = divmod(seconds // 60, 60)
+    if h > 0:
+        return f"{h}h{m:02d}m"
+    return f"{m}m"
+
+
+def _progress_bar(completed: int, total: int, width: int = 8) -> str:
+    """Render a text-based progress bar."""
+    if total <= 0:
+        return " " * width
+    frac = min(1.0, completed / total)
+    filled = int(frac * width)
+    return "\u2588" * filled + "\u2591" * (width - filled)
 
 
 def _fmt_float(val: Optional[float], decimals: int = 1, sign: bool = False) -> str:
@@ -383,6 +497,178 @@ def render_dashboard(
     )
 
 
+# ─── Live Dashboard ─────────────────────────────────────────────────────────
+
+
+_LIVE_STATUS_ICONS = {
+    "done": ("✓", "green"),
+    "running": ("▶", "cyan"),
+    "pending": ("⏳", "dim"),
+}
+
+
+def render_live_table(
+    pairs: List[LivePairStatus],
+    tag: str = "",
+    elapsed_s: int = 0,
+) -> Table:
+    """Render Rich Table for live optimization progress."""
+    title = "MQE Live"
+    if tag:
+        title += f" [{tag}]"
+
+    table = Table(
+        title=title,
+        show_header=True,
+        header_style="bold",
+        show_lines=False,
+        padding=(0, 1),
+        expand=False,
+    )
+
+    table.add_column("", no_wrap=True, width=2)  # status icon
+    table.add_column("Pair", no_wrap=True)
+    table.add_column("Trials", justify="right", no_wrap=True)
+    table.add_column("Progress", no_wrap=True)
+    table.add_column("Value", justify="right")
+    table.add_column("Sharpe", justify="right")
+    table.add_column("DD", justify="right")
+
+    for p in pairs:
+        icon_char, icon_style = _LIVE_STATUS_ICONS.get(
+            p.status, ("?", "dim"),
+        )
+        icon = Text(icon_char, style=icon_style)
+
+        # Trials count
+        if p.trials_total > 0:
+            trials_str = f"{p.trials_completed:,}/{p.trials_total:,}"
+        else:
+            trials_str = "-"
+
+        # Progress bar
+        bar = _progress_bar(p.trials_completed, p.trials_total)
+
+        # Value
+        value_str = _fmt_float(p.best_value, 2) if p.best_value else "-"
+
+        # Sharpe with color
+        sharpe_str = _fmt_float(p.best_sharpe, 2) if p.best_sharpe else "-"
+        sharpe_style = ""
+        if p.best_sharpe >= 2.0:
+            sharpe_style = "green"
+        elif p.best_sharpe >= 1.0:
+            sharpe_style = "yellow"
+        elif p.best_sharpe > 0:
+            sharpe_style = "red"
+
+        # DD with color
+        dd_str = f"{p.best_drawdown:.1f}%" if p.best_drawdown else "-"
+        dd_style = ""
+        if p.best_drawdown:
+            dd_abs = abs(p.best_drawdown)
+            if dd_abs < 5:
+                dd_style = "green"
+            elif dd_abs < 10:
+                dd_style = "yellow"
+            else:
+                dd_style = "red"
+
+        table.add_row(
+            icon,
+            p.symbol,
+            trials_str,
+            bar,
+            value_str,
+            Text(sharpe_str, style=sharpe_style),
+            Text(dd_str, style=dd_style),
+        )
+
+    # Caption: summary stats
+    n_done = sum(1 for p in pairs if p.status == "done")
+    n_total = len(pairs)
+    trials_done = sum(p.trials_completed for p in pairs)
+    trials_total = sum(p.trials_total for p in pairs)
+    trials_pct = (trials_done / trials_total * 100) if trials_total > 0 else 0
+    elapsed_str = _format_elapsed(elapsed_s)
+
+    caption = (
+        f"Pairs {n_done}/{n_total} | "
+        f"Trials {trials_done:,}/{trials_total:,} ({trials_pct:.0f}%) | "
+        f"Elapsed {elapsed_str}"
+    )
+    table.caption = caption
+
+    return table
+
+
+def run_live_dashboard(
+    results_dir: Path,
+    refresh_interval: float = 3.0,
+    once: bool = False,
+) -> None:
+    """Main live dashboard loop.
+
+    Finds active run, displays live table with Rich Live.
+    When ``pipeline_result.json`` appears, shows completion and exits.
+    """
+    from rich.live import Live
+
+    run_dir = find_active_run(results_dir)
+
+    if run_dir is None:
+        # No active run — show completed runs summary and return
+        console.print("[dim]No active run found.[/dim]")
+        render_dashboard(results_dir)
+        return
+
+    run_id = run_dir.name
+    tag = ""
+
+    # Try to detect tag from config or directory structure
+    config = _load_json(run_dir / "run_config.json")
+    if config:
+        tag = config.get("tag", "")
+
+    start_time = time.time()
+
+    if once:
+        # Single snapshot
+        pairs = load_live_run(run_dir)
+        elapsed_s = int(time.time() - start_time)
+        table = render_live_table(pairs, tag=tag or run_id, elapsed_s=elapsed_s)
+        console.print(table)
+        return
+
+    # Live loop
+    try:
+        with Live(console=console, refresh_per_second=1) as live:
+            while True:
+                # Check for completion
+                if (run_dir / "pipeline_result.json").exists():
+                    pairs = load_live_run(run_dir)
+                    elapsed_s = int(time.time() - start_time)
+                    table = render_live_table(
+                        pairs, tag=tag or run_id, elapsed_s=elapsed_s,
+                    )
+                    live.update(table)
+                    console.print(
+                        f"\n[bold green]Run {run_id} completed![/bold green]",
+                    )
+                    break
+
+                pairs = load_live_run(run_dir)
+                elapsed_s = int(time.time() - start_time)
+                table = render_live_table(
+                    pairs, tag=tag or run_id, elapsed_s=elapsed_s,
+                )
+                live.update(table)
+                time.sleep(refresh_interval)
+
+    except KeyboardInterrupt:
+        console.print("\n[dim]Live dashboard stopped.[/dim]")
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 
@@ -407,6 +693,14 @@ def main() -> None:
         "--interval", type=int, default=30,
         help="Refresh interval in seconds (default: 30)",
     )
+    parser.add_argument(
+        "--live", action="store_true",
+        help="Live dashboard for active optimization run",
+    )
+    parser.add_argument(
+        "--once", action="store_true",
+        help="Show single live snapshot and exit",
+    )
     args = parser.parse_args()
 
     results_dir = Path(args.results_dir)
@@ -414,7 +708,9 @@ def main() -> None:
         console.print(f"[red]Results directory not found: {results_dir}[/red]")
         sys.exit(1)
 
-    if args.watch:
+    if args.live or args.once:
+        run_live_dashboard(results_dir, once=args.once)
+    elif args.watch:
         try:
             while True:
                 console.clear()
