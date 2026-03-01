@@ -38,3 +38,18 @@ Full MQE (Multi-pair Quant Engine) implementation from scratch — 18 TDD tasks,
 - 165 tests, all passing
 - Pushed to GitHub: b33k33p3r0000/mqe (private)
 - Ready for first real optimization run
+
+---
+
+## 2026-03-01 — Code Review Fixes (C1, W1-W13, I4)
+
+### Uděláno
+- **C1**: FEE 0.075% → 0.06% (Binance VIP0 taker + buffer, starý outdated)
+- **I4**: STARTING_EQUITY 50k → 100k, POSITION_PCT 25% → 20% (research: max 20% per pair, inv-vol sizing [5-20%])
+- **W1-W2**: BacktestResult equity=0→STARTING_EQUITY, portfolio candidate filtering fix (premature break)
+- **W3-W4**: metrics.py performance — `.iloc` → pre-extracted `.values`, Python reindex loop → `pd.reindex()`
+- **W5-W13**: stage2 `callable`→`Callable`, io.py error handling + shared `fmt()`, monitor verdict delegace na analyze.py, falsy float checks, sizing hardcoded→config konstanty, notify kanál fix, deduplikace `_load_json`/`_fmt`
+- **W10**: Nová konstanta `CORRELATION_HAIRCUT_FACTOR = 0.90` v config.py
+
+### Current state
+- 267 tests, all passing

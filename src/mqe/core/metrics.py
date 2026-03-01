@@ -221,6 +221,7 @@ def calculate_time_based_sharpe(
 
     # Pro kazdy trade, spocitej hourly returns v dobe drzeni pozice
     price_index = price_data.index
+    close_arr = price_data["close"].values
 
     for _, trade in trades_df.iterrows():
         entry_ts = trade["entry_ts"]
@@ -257,10 +258,10 @@ def calculate_time_based_sharpe(
             prev_price = entry_price
             for i in range(rel_start, rel_end + 1):
                 abs_idx = start_idx + i
-                if abs_idx >= len(price_data):
+                if abs_idx >= len(close_arr):
                     break
 
-                current_price = float(price_data["close"].iloc[abs_idx])
+                current_price = close_arr[abs_idx]
                 if prev_price > 0:
                     hourly_return = direction_mult * (current_price - prev_price) / prev_price
                     hourly_returns[i] = hourly_return
@@ -325,11 +326,8 @@ def calculate_equity_based_sharpe(
         end=max(daily_pnl.index),
         freq="D",
     )
-    daily_pnl_full = pd.Series(0.0, index=all_dates)
-    for date in all_dates:
-        d = date.date()
-        if d in daily_pnl.index:
-            daily_pnl_full[date] = daily_pnl[d]
+    daily_pnl.index = pd.to_datetime(daily_pnl.index)
+    daily_pnl_full = daily_pnl.reindex(all_dates, fill_value=0.0)
 
     # Equity curve
     equity_curve = start_equity + daily_pnl_full.cumsum()
@@ -372,11 +370,8 @@ def calculate_sortino_ratio(
         end=max(daily_pnl.index),
         freq="D",
     )
-    daily_pnl_full = pd.Series(0.0, index=all_dates)
-    for date in all_dates:
-        d = date.date()
-        if d in daily_pnl.index:
-            daily_pnl_full[date] = daily_pnl[d]
+    daily_pnl.index = pd.to_datetime(daily_pnl.index)
+    daily_pnl_full = daily_pnl.reindex(all_dates, fill_value=0.0)
 
     equity_curve = start_equity + daily_pnl_full.cumsum()
     daily_returns = equity_curve.pct_change().dropna()

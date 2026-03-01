@@ -5,7 +5,7 @@ Simple Discord webhook notifications for pipeline events.
 Adapted from QRE notify.py.
 
 Channels:
-  #qre-runs  -- pipeline start, complete, analysis results
+  #mqe-runs  -- pipeline start, complete, analysis results
 """
 
 from __future__ import annotations

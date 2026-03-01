@@ -35,7 +35,7 @@ TF_MS: dict[str, int] = {
 
 # ─── TRADING COSTS ──────────────────────────────────────────────────────────
 
-FEE = float(os.environ.get("FEE", "0.00075"))
+FEE = float(os.environ.get("FEE", "0.0006"))  # 6 bps (Binance VIP0 taker=5 bps + 1 bps buffer)
 
 SLIPPAGE_MAP: dict[str, float] = {
     "BTC/USDT": 0.0006,
@@ -396,8 +396,8 @@ MAX_API_RETRIES = 5
 # ─── BACKTESTING ────────────────────────────────────────────────────────────
 
 MIN_WARMUP_BARS = 200
-STARTING_EQUITY = 50_000.0
-BACKTEST_POSITION_PCT = 0.25  # default, overridden by sizing module
+STARTING_EQUITY = 100_000.0
+BACKTEST_POSITION_PCT = 0.20  # Stage 1 per-pair default (portfolio uses inv-vol sizing [5-20%])
 
 # ─── EXIT SYSTEM ────────────────────────────────────────────────────────────
 
@@ -414,8 +414,8 @@ DEFAULT_PORTFOLIO_HEAT = 0.05
 DEFAULT_SIZING_METHOD = "inv_vol"
 CORRELATION_GATE_THRESHOLD = 0.75
 CORRELATION_GATE_MAX_OPEN = 3
-SIGNAL_STRENGTH_NORMAL = 1.0
 SIGNAL_STRENGTH_GATED = 1.5
+CORRELATION_HAIRCUT_FACTOR = 0.90  # 10% size reduction per correlated open pair
 POSITION_MIN_PCT = 0.05
 POSITION_MAX_PCT = 0.20
 

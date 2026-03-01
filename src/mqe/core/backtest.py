@@ -443,7 +443,7 @@ def simulate_trades_fast(
 
     if len(base) < MIN_WARMUP_BARS:
         logger.warning("Not enough data (%d bars)", len(base))
-        return BacktestResult(equity=0.0, trades=[], backtest_days=0)
+        return BacktestResult(equity=STARTING_EQUITY, trades=[], backtest_days=0)
 
     actual_start = start_idx if start_idx is not None else MIN_WARMUP_BARS
     actual_end = end_idx if end_idx is not None else len(base)

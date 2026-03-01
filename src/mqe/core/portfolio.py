@@ -402,8 +402,8 @@ class PortfolioSimulator:
             # ── 4. Filter candidates ──
             filtered: list[tuple[str, int, float]] = []
             for sym, direction, strength in candidates:
-                # Max concurrent check
-                if len(open_positions) >= self.max_concurrent:
+                # Max concurrent — skip remaining if full
+                if len(open_positions) + len(filtered) >= self.max_concurrent:
                     break
 
                 # Cluster max check

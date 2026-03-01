@@ -19,7 +19,7 @@ Global params optimized:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import optuna
@@ -45,7 +45,7 @@ def build_portfolio_objective(
     pair_data: dict[str, dict[str, pd.DataFrame]],
     pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     pair_params: dict[str, dict[str, Any]],
-) -> callable:
+) -> Callable:
     """Build multi-objective function for Stage 2.
 
     Returns callable(trial) -> (portfolio_calmar, worst_pair_calmar, neg_overfit_penalty)

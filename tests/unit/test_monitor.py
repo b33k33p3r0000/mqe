@@ -37,6 +37,7 @@ def _make_completed_run(run_dir: Path, tag: str = "test", n_symbols: int = 3) ->
                 "symbol": sym,
                 "objective_value": 2.5,
                 "sharpe_equity": 1.5,
+                "calmar": 2.0,
                 "max_drawdown": -5.0,
                 "total_pnl_pct": 10.0,
                 "trades_per_year": 80.0,

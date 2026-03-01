@@ -13,6 +13,8 @@ from __future__ import annotations
 
 
 from mqe.config import (
+    CORRELATION_GATE_THRESHOLD,
+    CORRELATION_HAIRCUT_FACTOR,
     OI_MC_DANGER_PENALTY,
     OI_MC_DANGER_THRESHOLD,
     PAIR_PROFILES,
@@ -58,8 +60,8 @@ def compute_position_size(
     if symbol in corr_dict:
         for open_sym in open_pairs:
             if open_sym in corr_dict[symbol]:
-                if abs(corr_dict[symbol][open_sym]) > 0.75:
-                    weight *= 0.90  # 10% haircut per correlated pair
+                if abs(corr_dict[symbol][open_sym]) > CORRELATION_GATE_THRESHOLD:
+                    weight *= CORRELATION_HAIRCUT_FACTOR
 
     # Step 4: OI/MC danger penalty
     profile = PAIR_PROFILES.get(symbol, {})

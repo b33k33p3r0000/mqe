@@ -88,45 +88,27 @@ class LivePairStatus:
 # ─── Data Loading ─────────────────────────────────────────────────────────────
 
 
-def _load_json(path: Path) -> Optional[dict]:
-    """Load JSON file, return None on failure."""
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return None
+from mqe.io import try_load_json as _load_json  # noqa: E402
 
 
 def _count_verdicts(
     pipeline: dict, eval_metrics: Optional[dict],
 ) -> tuple:
-    """Count PASS/WARN/FAIL verdicts from pipeline data."""
+    """Count PASS/WARN/FAIL verdicts from pipeline data (delegates to analyze.py)."""
+    from mqe.analyze import analyze_pair
+
     n_pass = n_warn = n_fail = 0
     s1_results = pipeline.get("stage1_results", {})
 
     for sym, res in s1_results.items():
-        sharpe = res.get("sharpe_equity", 0)
-        tpy = res.get("trades_per_year", 0)
-        dd = abs(res.get("max_drawdown", 0))
-
-        # Same logic as analyze.py
-        issues = []
-        if tpy < 30:
-            issues.append("low_trades")
-        if sharpe < 0.5:
-            issues.append("low_sharpe")
-        if dd > 15:
-            issues.append("high_dd")
-
-        if not issues:
-            if sharpe > 3.0:
-                n_warn += 1
-            else:
-                n_pass += 1
-        elif "low_sharpe" in issues or "high_dd" in issues:
-            n_fail += 1
-        else:
+        result = analyze_pair(sym, res)
+        v = result["verdict"]
+        if v == "PASS":
+            n_pass += 1
+        elif v == "WARN":
             n_warn += 1
+        else:
+            n_fail += 1
 
     return n_pass, n_warn, n_fail
 
@@ -552,22 +534,23 @@ def render_live_table(
         bar = _progress_bar(p.trials_completed, p.trials_total)
 
         # Value
-        value_str = _fmt_float(p.best_value, 2) if p.best_value else "-"
+        has_value = p.trials_completed > 0
+        value_str = _fmt_float(p.best_value, 2) if has_value else "-"
 
         # Sharpe with color
-        sharpe_str = _fmt_float(p.best_sharpe, 2) if p.best_sharpe else "-"
+        sharpe_str = _fmt_float(p.best_sharpe, 2) if has_value else "-"
         sharpe_style = ""
-        if p.best_sharpe >= 2.0:
+        if has_value and p.best_sharpe >= 2.0:
             sharpe_style = "green"
-        elif p.best_sharpe >= 1.0:
+        elif has_value and p.best_sharpe >= 1.0:
             sharpe_style = "yellow"
-        elif p.best_sharpe > 0:
+        elif has_value and p.best_sharpe > 0:
             sharpe_style = "red"
 
         # DD with color
-        dd_str = f"{p.best_drawdown:.1f}%" if p.best_drawdown else "-"
+        dd_str = f"{p.best_drawdown:.1f}%" if has_value else "-"
         dd_style = ""
-        if p.best_drawdown:
+        if has_value:
             dd_abs = abs(p.best_drawdown)
             if dd_abs < 5:
                 dd_style = "green"

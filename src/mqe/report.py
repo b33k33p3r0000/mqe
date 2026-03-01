@@ -41,14 +41,7 @@ def _verdict_text(verdict: str) -> Text:
     return Text(verdict, style=style)
 
 
-def _fmt(value: float | int, decimals: int = 2) -> str:
-    """Format a numeric value safely."""
-    if isinstance(value, int):
-        return str(value)
-    try:
-        return f"{float(value):.{decimals}f}"
-    except (TypeError, ValueError):
-        return str(value)
+from mqe.io import fmt as _fmt  # noqa: E402
 
 
 # ─── RICH CONSOLE REPORT ────────────────────────────────────────────────────

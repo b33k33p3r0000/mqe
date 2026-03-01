@@ -189,15 +189,7 @@ def compare_runs(run_dirs: List[Path]) -> Dict[str, Any]:
 
 # ─── FORMATTING HELPERS ─────────────────────────────────────────────────────
 
-
-def _fmt(value: Any, decimals: int = 2) -> str:
-    """Format a numeric value safely."""
-    if isinstance(value, int):
-        return str(value)
-    try:
-        return f"{float(value):.{decimals}f}"
-    except (TypeError, ValueError):
-        return str(value)
+from mqe.io import fmt as _fmt  # noqa: E402
 
 
 # ─── RICH CONSOLE OUTPUT ────────────────────────────────────────────────────
