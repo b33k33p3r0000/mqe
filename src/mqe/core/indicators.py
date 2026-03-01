@@ -19,7 +19,8 @@ def rsi(series: pd.Series, length: int = 14) -> pd.Series:
     avg_gain = pd.Series(gain, index=series.index).rolling(length, min_periods=length).mean()
     avg_loss = pd.Series(loss, index=series.index).rolling(length, min_periods=length).mean()
     rs = avg_gain / (avg_loss.replace(0, np.nan))
-    return 100 - (100 / (1 + rs))
+    result = 100 - (100 / (1 + rs))
+    return result.fillna(100.0)
 
 
 def macd(

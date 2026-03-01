@@ -303,7 +303,7 @@ def generate_markdown_report(
     portfolio = analysis.get("portfolio", {})
     s2 = pipeline_result.get("stage2_results", {})
     pm = portfolio.get("portfolio_metrics", {})
-    ps = eval_result.get("portfolio_result_summary", {})
+    ps = (eval_result or {}).get("portfolio_result_summary", {})
 
     lines.append("## Stage 2 — Portfolio")
     lines.append("")

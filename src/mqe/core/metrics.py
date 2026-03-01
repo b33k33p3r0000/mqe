@@ -201,7 +201,7 @@ def calculate_time_based_sharpe(
     if not trades or price_data.empty:
         return 0.0
 
-    end_idx = end_idx or len(price_data)
+    end_idx = end_idx if end_idx is not None else len(price_data)
     n_hours = end_idx - start_idx
 
     if n_hours < 100:  # Minimum pro smysluplny vypocet
