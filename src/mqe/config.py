@@ -19,7 +19,7 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 SYMBOLS = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT",
     "XRP/USDT", "BNB/USDT", "LINK/USDT",
-    "SUI/USDT", "AVAX/USDT", "ADA/USDT",
+    "SUI/USDT", "DOT/USDT", "ADA/USDT",
     "NEAR/USDT", "LTC/USDT", "APT/USDT",
     "ARB/USDT", "OP/USDT", "INJ/USDT",
 ]
@@ -45,7 +45,7 @@ SLIPPAGE_MAP: dict[str, float] = {
     "BNB/USDT": 0.0012,
     "LINK/USDT": 0.0018,
     "SUI/USDT": 0.0022,
-    "AVAX/USDT": 0.0020,
+    "DOT/USDT": 0.0020,
     "ADA/USDT": 0.0020,
     "NEAR/USDT": 0.0025,
     "LTC/USDT": 0.0015,
@@ -134,15 +134,15 @@ PAIR_PROFILES: dict[str, dict] = {
         "oi_mc_ratio": 0.08,
         "volume_24h_min": 0.15e9,
     },
-    "AVAX/USDT": {
+    "DOT/USDT": {
         "tier": "B+",
         "cluster": "smart_contract_l1",
-        "btc_corr": 0.76,
-        "ann_vol": 0.90,
-        "atr_1h_pct": 0.010,
+        "btc_corr": 0.75,
+        "ann_vol": 0.85,
+        "atr_1h_pct": 0.009,
         "slippage_bps": 20,
-        "oi_mc_ratio": 0.05,
-        "volume_24h_min": 0.15e9,
+        "oi_mc_ratio": 0.04,
+        "volume_24h_min": 0.12e9,
     },
     "ADA/USDT": {
         "tier": "B+",
@@ -227,7 +227,7 @@ def get_cluster(symbol: str) -> str:
 
 CLUSTER_DEFINITIONS: dict[str, list[str]] = {
     "blue_chip": ["BTC/USDT", "LTC/USDT"],
-    "smart_contract_l1": ["ETH/USDT", "SOL/USDT", "ADA/USDT", "AVAX/USDT",
+    "smart_contract_l1": ["ETH/USDT", "SOL/USDT", "ADA/USDT", "DOT/USDT",
                           "NEAR/USDT", "APT/USDT", "SUI/USDT"],
     "l2": ["ARB/USDT", "OP/USDT"],
     "exchange": ["BNB/USDT"],

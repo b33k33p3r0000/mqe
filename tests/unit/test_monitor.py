@@ -86,7 +86,7 @@ def _make_running_run(run_dir: Path, n_pairs_done: int = 5) -> None:
     s1_dir = run_dir / "stage1"
     s1_dir.mkdir(parents=True, exist_ok=True)
     symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "BNB/USDT",
-               "LINK/USDT", "SUI/USDT", "AVAX/USDT"]
+               "LINK/USDT", "SUI/USDT", "DOT/USDT"]
     for sym in symbols[:n_pairs_done]:
         safe = sym.replace("/", "_")
         _write_json(s1_dir / f"{safe}.json", {

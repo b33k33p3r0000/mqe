@@ -23,7 +23,7 @@ class TestPositionSizing:
             "BTC/USDT": 0.004,
             "ETH/USDT": 0.006,
             "SOL/USDT": 0.009,
-            "AVAX/USDT": 0.012,
+            "DOT/USDT": 0.012,
             "NEAR/USDT": 0.010,
             "ADA/USDT": 0.008,
         }
