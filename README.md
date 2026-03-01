@@ -1,4 +1,29 @@
-# MQE — Multi-pair Quant Engine
+# Multi-pair Quant Engine (MQE)
+
+Systematic multi-pair algo trading optimizer — 6-layer Entry Funnel · Two-stage Optuna (TPE + NSGA-II) · Portfolio-level risk management
+
+## Stage 1 Results — First Run (in progress)
+
+> Run `20260301_032006` — 50k S1 trials per pair, 15 symbols, 1yr data, AWF 3 splits. Stage 1 at 52% (26k/50k), Stage 2 pending.
+
+| Pair | Log Calmar | Sharpe (eq) | Max DD | PnL% | Trades |
+|------|-----------|-------------|--------|------|--------|
+| BTC/USDT | 6.55 | 3.00 | -2.06% | +5.06% | 48 |
+| ETH/USDT | 6.65 | 2.61 | -2.34% | +5.47% | 34 |
+| SOL/USDT | 7.06 | 2.96 | -2.52% | +8.34% | 31 |
+| *12 dalších párů* | *—* | *—* | *—* | *—* | *optimalizace běží* |
+
+> Preliminary — 26k/50k trials na prvních 3 párech. Finální výsledky po dokončení všech 15 symbolů + Stage 2 portfolio optimalizace.
+
+## Architecture
+
+- **6-layer entry funnel:** MACD crossover · RSI lookback · HTF trend · BTC regime · ADX pre-filter · Correlation gate
+- **5-level exit:** Hard stop (ATR) · Trailing stop · Time exit · Opposing signal · Portfolio heat
+- **Two-stage optimization:** Per-pair TPE (14 params) → Portfolio NSGA-II (4 global params)
+- **Risk management:** Inverse-vol sizing · Correlation haircut · Cluster limits · Portfolio heat circuit breaker
+- **Validation:** Anchored Walk-Forward with purge gaps · Monte Carlo 1,000 shuffles
+
+---
 
 Multi-pair MACD/RSI funnel optimizer for crypto perpetual futures.
 Hierarchical two-stage Optuna optimization: per-pair signal calibration (Stage 1) + portfolio-level tuning (Stage 2).
