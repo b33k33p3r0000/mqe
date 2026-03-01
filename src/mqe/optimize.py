@@ -253,12 +253,14 @@ def compute_parallelism(
     """Compute optimal (max_workers, n_jobs_per_pair) based on CPU count.
 
     Strategy:
-    - max_workers = number of pair processes running concurrently
+    - max_workers = number of pair processes running concurrently (queued)
     - n_jobs = number of parallel trial threads within each pair process
     - Total threads = max_workers × n_jobs ≈ cpu_count
+    - Each pair gets at least 2 trial threads for meaningful parallelism
 
-    When n_pairs >= cpu_count: all cores busy with 1 job each (n_jobs=1).
-    When n_pairs < cpu_count: distribute extra cores as trial parallelism.
+    Pairs beyond max_workers wait in ProcessPoolExecutor queue and start
+    as soon as a running pair finishes. This means you can always pass
+    all pairs and the system handles scheduling automatically.
 
     Numba @njit releases the GIL, so threading achieves true parallelism
     for the compute-heavy backtest loop (~60% of trial time).
@@ -270,7 +272,9 @@ def compute_parallelism(
         return max_workers, n_jobs
 
     if max_workers is None:
-        max_workers = min(n_pairs, usable_cores)
+        # Cap concurrent pairs so each gets at least 2 trial threads.
+        # Remaining pairs queue and auto-start when a slot opens.
+        max_workers = min(n_pairs, max(1, usable_cores // 2))
 
     if n_jobs is None:
         n_jobs = max(1, usable_cores // max_workers)
