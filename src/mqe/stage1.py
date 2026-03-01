@@ -386,6 +386,7 @@ def run_stage1_pair(
     allow_flip: int = 0,
     output_dir: Path | None = None,
     progress_interval: int = 500,
+    n_jobs: int = 1,
 ) -> dict[str, Any]:
     """Run Stage 1 optimization for a single pair.
 
@@ -403,6 +404,11 @@ def run_stage1_pair(
         allow_flip: Fixed allow_flip value (0=selective, 1=always-in).
         output_dir: Directory for progress/result files (None = no file output).
         progress_interval: Write progress every N trials (default 500).
+        n_jobs: Number of parallel trial workers per pair (default 1).
+            With n_jobs > 1, Optuna uses ThreadPoolExecutor + constant_liar
+            to run multiple trials concurrently. Numba-compiled backtest
+            releases GIL, so threads achieve true parallelism for the
+            compute-heavy part.
 
     Returns:
         Dict with best_params (all 14 strategy params) + optimization metadata.
@@ -456,7 +462,7 @@ def run_stage1_pair(
         objective,
         n_trials=n_trials,
         timeout=timeout if timeout > 0 else None,
-        n_jobs=1,
+        n_jobs=n_jobs,
         show_progress_bar=False,
         callbacks=callbacks,
     )

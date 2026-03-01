@@ -245,12 +245,46 @@ def precompute_all_signals(
     return signals
 
 
+def compute_parallelism(
+    n_pairs: int,
+    max_workers: int | None = None,
+    n_jobs: int | None = None,
+) -> tuple[int, int]:
+    """Compute optimal (max_workers, n_jobs_per_pair) based on CPU count.
+
+    Strategy:
+    - max_workers = number of pair processes running concurrently
+    - n_jobs = number of parallel trial threads within each pair process
+    - Total threads = max_workers × n_jobs ≈ cpu_count
+
+    When n_pairs >= cpu_count: all cores busy with 1 job each (n_jobs=1).
+    When n_pairs < cpu_count: distribute extra cores as trial parallelism.
+
+    Numba @njit releases the GIL, so threading achieves true parallelism
+    for the compute-heavy backtest loop (~60% of trial time).
+    """
+    cpu_count = os.cpu_count() or 4
+    usable_cores = max(1, cpu_count - 1)  # leave 1 for OS
+
+    if max_workers is not None and n_jobs is not None:
+        return max_workers, n_jobs
+
+    if max_workers is None:
+        max_workers = min(n_pairs, usable_cores)
+
+    if n_jobs is None:
+        n_jobs = max(1, usable_cores // max_workers)
+
+    return max_workers, n_jobs
+
+
 def run_stage1_all_pairs(
     symbols: list[str],
     all_data: dict[str, dict[str, pd.DataFrame]],
     n_trials: int,
     max_workers: int | None = None,
     output_dir: Path | None = None,
+    n_jobs: int | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run Stage 1 for all pairs in parallel.
 
@@ -258,14 +292,23 @@ def run_stage1_all_pairs(
         symbols: List of trading pair symbols.
         all_data: Dict of {symbol: {timeframe: DataFrame}}.
         n_trials: Number of Optuna trials per pair.
-        max_workers: Max parallel workers (default: min(n_pairs, cpu_count-1)).
+        max_workers: Max parallel workers (default: auto from CPU count).
         output_dir: Directory for progress/result files (None = no file output).
+        n_jobs: Parallel trial threads per pair (default: auto from CPU count).
 
     Returns:
         Dict of {symbol: stage1_result_dict}.
     """
-    if max_workers is None:
-        max_workers = min(len(symbols), max(1, (os.cpu_count() or 4) - 1))
+    max_workers, jobs_per_pair = compute_parallelism(
+        len(symbols), max_workers, n_jobs,
+    )
+
+    logger.info(
+        "Stage 1 parallelism: %d pair workers × %d trial jobs = %d total threads "
+        "(CPU cores: %d)",
+        max_workers, jobs_per_pair, max_workers * jobs_per_pair,
+        os.cpu_count() or 0,
+    )
 
     results: dict[str, dict[str, Any]] = {}
 
@@ -274,6 +317,7 @@ def run_stage1_all_pairs(
             executor.submit(
                 run_stage1_pair, symbol, all_data[symbol], n_trials,
                 output_dir=output_dir,
+                n_jobs=jobs_per_pair,
             ): symbol
             for symbol in symbols
         }
@@ -297,6 +341,7 @@ def run_pipeline(
     output_dir: Path | None = None,
     tag: str = "",
     max_workers: int | None = None,
+    n_jobs: int | None = None,
 ) -> dict[str, Any]:
     """Run full MQE optimization pipeline.
 
@@ -308,6 +353,7 @@ def run_pipeline(
         output_dir: Directory to save results (auto-generated if None).
         tag: Optional run tag for identification.
         max_workers: Max parallel workers for Stage 1.
+        n_jobs: Parallel trial threads per pair (default: auto from CPU count).
 
     Returns:
         Dict with stage1_results, stage2_results, and metadata.
@@ -340,6 +386,7 @@ def run_pipeline(
     stage1_results = run_stage1_all_pairs(
         symbols, all_data, stage1_trials, max_workers,
         output_dir=output_dir,
+        n_jobs=n_jobs,
     )
 
     # ── 3. Re-compute signals with best Stage 1 params ──
@@ -395,6 +442,10 @@ def main() -> None:
     parser.add_argument("--hours", type=int, default=8760)
     parser.add_argument("--tag", type=str, default="")
     parser.add_argument("--workers", type=int, default=None)
+    parser.add_argument(
+        "--s1-jobs", type=int, default=None,
+        help="Parallel trial threads per pair (default: auto from CPU count)",
+    )
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 
@@ -412,6 +463,7 @@ def main() -> None:
         output_dir=output_dir,
         tag=args.tag,
         max_workers=args.workers,
+        n_jobs=args.s1_jobs,
     )
 
 
