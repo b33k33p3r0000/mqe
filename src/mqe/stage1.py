@@ -1,7 +1,7 @@
 """
-MQE Stage 1 — Per-pair Optuna TPE Optimizer
-=============================================
-Anchored Walk-Forward optimization per pair using Optuna TPE.
+MQE Stage 1 — Per-pair Optuna CMA-ES Optimizer
+================================================
+Anchored Walk-Forward optimization per pair using Optuna CMA-ES (with TPE warmup).
 
 Adapted from QRE's optimize.py for MQE's MultiPairStrategy (14 params).
 Key differences from QRE:
@@ -48,7 +48,6 @@ from mqe.config import (
     SHARPE_SUSPECT_THRESHOLD,
     STARTING_EQUITY,
     STARTUP_TRIALS_RATIO,
-    TARGET_TRADES_YEAR,
     TPE_CONSIDER_ENDPOINTS,
     TPE_N_EI_CANDIDATES,
 )
@@ -113,13 +112,24 @@ def compute_awf_splits(
 
 
 def create_sampler(seed: int, n_trials: int) -> optuna.samplers.BaseSampler:
-    """Create TPE sampler for Optuna study."""
+    """Create CMA-ES sampler with TPE warmup for Optuna study.
+
+    CMA-ES converges faster than TPE for continuous parameter spaces.
+    Uses TPE for initial exploration (startup trials), then CMA-ES takes over.
+    """
     n_startup = max(MIN_STARTUP_TRIALS, int(n_trials * STARTUP_TRIALS_RATIO))
-    return optuna.samplers.TPESampler(
+    tpe_warmup = optuna.samplers.TPESampler(
         seed=seed,
         n_startup_trials=n_startup,
         n_ei_candidates=TPE_N_EI_CANDIDATES,
         consider_endpoints=TPE_CONSIDER_ENDPOINTS,
+    )
+    return optuna.samplers.CmaEsSampler(
+        seed=seed,
+        n_startup_trials=n_startup,
+        source_trials=None,
+        warn_independent_sampling=False,
+        independent_sampler=tpe_warmup,
     )
 
 
@@ -129,7 +139,7 @@ def create_pruner(n_trials: int) -> optuna.pruners.BasePruner:
         return optuna.pruners.NopPruner()
     return optuna.pruners.SuccessiveHalvingPruner(
         min_resource=1,
-        reduction_factor=3,
+        reduction_factor=2,
         min_early_stopping_rate=0,
     )
 
@@ -142,15 +152,15 @@ def compute_objective_score(
     sharpe: float,
     trades_per_year: float,
 ) -> float:
-    """Compute Log Calmar objective score with trade ramp and Sharpe decay.
+    """Compute Log Calmar objective score with Sharpe decay.
 
-    This is the core scoring function used by the Optuna objective.
-    Identical to QRE's proven objective.
+    Trade count is enforced via MIN_TRADES_YEAR_HARD (hard constraint),
+    not via soft ramp.
 
     Args:
         raw_calmar: Raw Calmar ratio (annual_return / max_dd), floored and clamped >= 0.
         sharpe: Equity-based Sharpe ratio (clamped >= 0).
-        trades_per_year: Number of trades per year.
+        trades_per_year: Number of trades per year (unused, kept for API compat).
 
     Returns:
         Objective score (higher is better).
@@ -158,15 +168,12 @@ def compute_objective_score(
     # Log dampening -- compress extreme Calmar values
     log_calmar = math.log(1.0 + raw_calmar)
 
-    # Trade count ramp -- penalize low frequency
-    trade_mult = min(1.0, max(0.0, trades_per_year / TARGET_TRADES_YEAR))
-
     # Smooth Sharpe decay -- penalize suspiciously high Sharpe
     if sharpe > SHARPE_SUSPECT_THRESHOLD:
         penalty = 1.0 / (1.0 + SHARPE_DECAY_RATE * (sharpe - SHARPE_SUSPECT_THRESHOLD))
         log_calmar *= penalty
 
-    return log_calmar * trade_mult
+    return log_calmar
 
 
 # ─── BUILD OBJECTIVE ────────────────────────────────────────────────────────
@@ -292,6 +299,11 @@ def build_objective(
             _tpy.append(trades_per_year)
 
             split_scores.append(score)
+
+            # Report intermediate score for pruning after each split
+            trial.report(float(np.mean(split_scores)), len(split_scores) - 1)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
 
         if not split_scores or all(s == 0 for s in split_scores):
             return 0.0
@@ -486,12 +498,14 @@ def run_stage1_pair(
         )
 
     # Build result dict
+    best_trial = study.best_trial
     result: dict[str, Any] = {}
     result.update(best_params)
     result.update({
         "symbol": symbol,
         "objective_value": best_value,
         "objective_type": "log_calmar",
+        "best_trial_number": best_trial.number,
         "n_trials_completed": completed_trials,
         "n_trials_requested": n_trials,
         "n_splits": len(splits),
@@ -501,7 +515,6 @@ def run_stage1_pair(
     })
 
     # Add trial user attrs if available
-    best_trial = study.best_trial
     for key in ["sharpe_equity", "max_drawdown", "total_pnl_pct", "trades", "trades_per_year"]:
         if key in best_trial.user_attrs:
             result[key] = best_trial.user_attrs[key]

@@ -277,7 +277,7 @@ def compute_parallelism(
         max_workers = min(n_pairs, max(1, usable_cores // 2))
 
     if n_jobs is None:
-        n_jobs = max(1, usable_cores // max_workers)
+        n_jobs = min(3, max(1, usable_cores // max_workers))
 
     return max_workers, n_jobs
 

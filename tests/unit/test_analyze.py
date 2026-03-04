@@ -35,7 +35,7 @@ def _bad_metrics() -> dict:
 def _warn_metrics() -> dict:
     """Metrics that should produce WARN (not FAIL, but concerning)."""
     return {
-        "trades_per_year": 50,
+        "trades_per_year": 80,
         "sharpe_equity": 1.0,
         "calmar": 0.3,
         "max_drawdown_pct": 18.0,

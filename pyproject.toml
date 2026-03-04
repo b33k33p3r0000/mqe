@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=18.0.0",
     "requests>=2.32.0",
     "rich>=13.0",
+    "cmaes>=0.12.0",
 ]
 
 [project.scripts]

@@ -352,7 +352,7 @@ OI_MC_DANGER_PENALTY = 0.70  # 30% size reduction
 
 # ─── TRADE COUNT CONSTRAINTS ────────────────────────────────────────────────
 
-MIN_TRADES_YEAR_HARD = 30
+MIN_TRADES_YEAR_HARD = 60
 MIN_TRADES_TEST_HARD = 5
 
 # ─── OPTIMIZATION ───────────────────────────────────────────────────────────

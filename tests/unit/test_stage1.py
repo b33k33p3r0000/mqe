@@ -38,22 +38,15 @@ class TestComputeObjectiveScore:
         )
         assert score == 0.0
 
-    def test_zero_for_zero_trades(self):
-        """No trades => trade_mult=0 => score=0."""
-        score = compute_objective_score(
+    def test_no_trade_ramp(self):
+        """Trade count does not affect score (hard constraint only)."""
+        score_a = compute_objective_score(
             raw_calmar=5.0, sharpe=1.0, trades_per_year=0,
         )
-        assert score == 0.0
-
-    def test_trade_ramp_partial(self):
-        """50 trades/year vs 100 target => trade_mult=0.5."""
-        score_full = compute_objective_score(
-            raw_calmar=3.0, sharpe=1.0, trades_per_year=100,
+        score_b = compute_objective_score(
+            raw_calmar=5.0, sharpe=1.0, trades_per_year=100,
         )
-        score_half = compute_objective_score(
-            raw_calmar=3.0, sharpe=1.0, trades_per_year=50,
-        )
-        assert abs(score_half - score_full * 0.5) < 0.01
+        assert score_a == score_b
 
     def test_sharpe_decay_penalty(self):
         """Sharpe > 3.0 triggers penalty."""
@@ -242,10 +235,10 @@ class TestRunStage1Pair:
 
 
 class TestCreateSampler:
-    def test_returns_tpe_sampler(self):
+    def test_returns_cmaes_sampler(self):
         import optuna
         sampler = create_sampler(seed=42, n_trials=100)
-        assert isinstance(sampler, optuna.samplers.TPESampler)
+        assert isinstance(sampler, optuna.samplers.CmaEsSampler)
 
 
 # ─── ProgressCallback ─────────────────────────────────────────────────────

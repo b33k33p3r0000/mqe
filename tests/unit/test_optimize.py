@@ -26,10 +26,10 @@ class TestComputeParallelism:
 
     @patch("mqe.optimize.os.cpu_count", return_value=16)
     def test_3_pairs_16_cores(self, _mock):
-        """3 pairs, 16 cores: each pair gets 5 trial threads."""
+        """3 pairs, 16 cores: each pair gets 3 trial threads (capped)."""
         workers, jobs = compute_parallelism(n_pairs=3)
         assert workers == 3
-        assert jobs == 5
+        assert jobs == 3
 
     @patch("mqe.optimize.os.cpu_count", return_value=12)
     def test_15_pairs_12_cores(self, _mock):
@@ -79,10 +79,10 @@ class TestComputeParallelism:
 
     @patch("mqe.optimize.os.cpu_count", return_value=30)
     def test_cluster_30_cores(self, _mock):
-        """3x Mac Mini (30 cores): 3 pairs get 9 jobs each."""
+        """3x Mac Mini (30 cores): 3 pairs get 3 jobs each (capped)."""
         workers, jobs = compute_parallelism(n_pairs=3)
         assert workers == 3
-        assert jobs == 9
+        assert jobs == 3
 
     @patch("mqe.optimize.os.cpu_count", return_value=30)
     def test_cluster_15_pairs_30_cores(self, _mock):
