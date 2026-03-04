@@ -6,7 +6,7 @@ Systematic multi-pair algo trading optimizer — 6-layer Entry Funnel · Two-sta
 
 - **6-layer entry funnel:** MACD crossover · RSI lookback · HTF trend · BTC regime · ADX pre-filter · Correlation gate
 - **5-level exit:** Hard stop (ATR) · Trailing stop · Time exit · Opposing signal · Portfolio heat
-- **Two-stage optimization:** Per-pair TPE (14 params) → Portfolio NSGA-II (4 global params)
+- **Two-stage optimization:** Per-pair CMA-ES with TPE warmup (14 params) → Portfolio NSGA-II (4 global params)
 - **Risk management:** Inverse-vol sizing · Correlation haircut · Cluster limits · Portfolio heat circuit breaker
 - **Validation:** Anchored Walk-Forward with purge gaps · Monte Carlo 1,000 shuffles
 
@@ -35,13 +35,14 @@ MQE runs a **6-layer entry funnel** combined with a **5-level exit system** acro
 
 ## Two-Stage Optimization
 
-**Stage 1 — Per-pair TPE** (Optuna TPE sampler, AWF splits):
+**Stage 1 — Per-pair CMA-ES** (Optuna CMA-ES sampler with TPE warmup, AWF splits):
 - 14 params per pair: MACD (fast/slow/signal), RSI (period/lower/upper/lookback), HTF trend (tf/strict), allow_flip, ADX threshold, exit params (trail_mult/hard_stop_mult/max_hold_bars)
-- Objective: `log(1 + Calmar)` with trade-count ramp and Sharpe decay
+- Objective: `log(1 + Calmar)` with Sharpe decay (no soft trade ramp — hard constraint only)
+- Active pruning: `trial.report()` + `should_prune()` after each AWF split (reduction_factor=2)
 - AWF splits: 3 splits (0.60/0.70, 0.70/0.80, 0.80/0.90) for data > 13,140 hours; 2 splits for shorter data
 - Purge gap: 50 bars between train/test
 - Runs in parallel via ProcessPoolExecutor; within each pair `n_jobs` threading (Numba releases GIL)
-- Progress: `{SYMBOL}_progress.json` written every 500 trials atomically
+- Progress: `{SYMBOL}_progress.json` written every 100 trials atomically
 
 **Stage 2 — Portfolio NSGA-II** (multi-objective):
 - 4 global params: max_concurrent, cluster_max, portfolio_heat, corr_gate_threshold
@@ -104,6 +105,7 @@ mqe/
 │   └── integration/         # Full pipeline smoke tests
 ├── run.sh                   # CLI entry point (interactive menu + process management)
 ├── pyproject.toml           # Dependencies (uv)
+├── NOTES.md                 # Session notes
 └── .env.example             # DISCORD_WEBHOOK_RUNS
 ```
 
@@ -174,7 +176,7 @@ All config in `src/mqe/config.py`. Key constants:
 | `FEE` | 0.06% (6 bps) | Trading fee per side (Binance VIP0 taker + buffer) |
 | `DEFAULT_TRIALS_STAGE1` | 10,000 | Optuna trials per pair |
 | `DEFAULT_TRIALS_STAGE2` | 5,000 | NSGA-II trials |
-| `MIN_TRADES_YEAR_HARD` | 30 | Minimum trades/year constraint |
+| `MIN_TRADES_YEAR_HARD` | 60 | Minimum trades/year constraint |
 | `MIN_TRADES_TEST_HARD` | 5 | Minimum trades in test set |
 | `PURGE_GAP_BARS` | 50 | AWF purge gap between train/test |
 | `MONTE_CARLO_SIMULATIONS` | 1,000 | MC shuffle count |
@@ -213,7 +215,7 @@ DISCORD_WEBHOOK_RUNS=https://discord.com/api/webhooks/...
 ## Dependencies
 
 - Python 3.11+
-- Optuna (TPE + NSGA-II)
+- Optuna (CMA-ES + NSGA-II) + cmaes
 - Numba (JIT backtest)
 - ccxt (Binance data)
 - numpy, pandas, pyarrow

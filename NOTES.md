@@ -41,6 +41,28 @@ Full MQE (Multi-pair Quant Engine) implementation from scratch — 18 TDD tasks,
 
 ---
 
+## 2026-03-04 — CMA-ES Sampler + Monitor Metrics + Critical Fixes
+
+### Uděláno
+- **CMA-ES sampler**: Přechod z TPE na CMA-ES s TPE warmupem — rychlejší konvergence v 14-param continuous search space
+- **Active pruning**: `trial.report()` + `should_prune()` po každém AWF splitu, reduction_factor=2 (prune 50% slabých trialů)
+- **MIN_TRADES_YEAR_HARD**: 30 → 60 (filtr low-sample párů)
+- **Soft trade ramp odstraněn**: TARGET_TRADES_YEAR zrušen — pouze hard constraint
+- **Monitor metriky**: Runs tabulka rozšířena o WinR%, Sortino, Worst Calmar, Max Concurrent, Hold bars, Profitable Months%. Live tabulka: Trades, PnL%
+- **Progress interval**: 500 → 100 trialů (responsivnější live dashboard)
+- **n_jobs cap**: Max 3 per pair pro lepší thread utilization
+- **Dependency**: cmaes>=0.12.0
+
+### Critical Fixes (3272fb6)
+- **C1**: RSI vrací 100 (ne NaN) když avg_loss je nula
+- **C2**: end_idx=0 se už netratuje jako None v time-based Sharpe
+- **C3**: `generate_markdown_report` guard proti eval_result=None
+
+### Current state
+- 267 tests, all passing
+
+---
+
 ## 2026-03-01 — Code Review Fixes (C1, W1-W13, I4)
 
 ### Uděláno

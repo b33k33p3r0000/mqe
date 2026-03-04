@@ -10,7 +10,6 @@ cd "$SCRIPT_DIR"
 # CONSTANTS
 # =============================================================================
 
-CORE_PAIRS="BTC/USDT ETH/USDT SOL/USDT"
 ALL_PAIRS="BTC/USDT ETH/USDT SOL/USDT XRP/USDT BNB/USDT LINK/USDT SUI/USDT DOT/USDT ADA/USDT NEAR/USDT LTC/USDT APT/USDT ARB/USDT OP/USDT INJ/USDT"
 
 # =============================================================================
@@ -23,13 +22,12 @@ MQE Optimizer — Multi-pair Quant Engine
 ========================================
 
 Presets (interactive menu when no CLI args):
-  1) Test     —  1k S1 +  500 S2 trials, 3 pairs (BTC, ETH, SOL)
-  2) Quick    —  5k S1 +   2k S2 trials, 3 pairs
-  3) Main     — 10k S1 +   5k S2 trials, 3 pairs
-  4) Full     — 10k S1 +   5k S2 trials, 15 pairs (all clusters)
-  5) Custom   — You choose everything
+  1) Test     —   2k S1 +   500 S2 trials, 15 pairs
+  2) Small    —  50k S1 +    5k S2 trials, 15 pairs
+  3) Full     — 100k S1 +   10k S2 trials, 15 pairs
+  4) Custom   — You choose everything
 
-All presets use --hours 8760 (~1yr) by default.
+All presets use --hours 26280 (~3yr) by default.
 All runs start in background by default (use --fg for foreground).
 
 Options:
@@ -244,59 +242,50 @@ if [ -z "$S1_TRIALS" ] && [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; the
     echo "MQE Optimizer — Preset Menu"
     echo "==========================="
     echo ""
-    echo "  1) Test    —   1k S1 +   500 S2,  3 pairs (BTC, ETH, SOL)"
-    echo "  2) Quick   —   5k S1 +    2k S2,  3 pairs"
-    echo "  3) Main    —  10k S1 +    5k S2,  3 pairs"
-    echo "  4) Full    —  10k S1 +    5k S2, 15 pairs (all clusters)"
-    echo "  5) Custom  —  You choose everything"
+    echo "  1) Test    —    2k S1 +   500 S2, 15 pairs"
+    echo "  2) Small   —   50k S1 +    5k S2, 15 pairs"
+    echo "  3) Full    —  100k S1 +   10k S2, 15 pairs"
+    echo "  4) Custom  —  You choose everything"
     echo ""
-    read -p "Select preset (1-5): " choice
+    read -p "Select preset (1-4): " choice
 
     case "$choice" in
         1)
             PRESET="test"
-            S1_TRIALS=1000
+            S1_TRIALS=2000
             S2_TRIALS=500
-            SYMBOLS_OVERRIDE="$CORE_PAIRS"
+            SYMBOLS_OVERRIDE="$ALL_PAIRS"
             ;;
         2)
-            PRESET="quick"
-            S1_TRIALS=5000
-            S2_TRIALS=2000
-            SYMBOLS_OVERRIDE="$CORE_PAIRS"
-            ;;
-        3)
-            PRESET="main"
-            S1_TRIALS=10000
-            S2_TRIALS=5000
-            SYMBOLS_OVERRIDE="$CORE_PAIRS"
-            ;;
-        4)
-            PRESET="full"
-            S1_TRIALS=10000
+            PRESET="small"
+            S1_TRIALS=50000
             S2_TRIALS=5000
             SYMBOLS_OVERRIDE="$ALL_PAIRS"
             ;;
-        5)
+        3)
+            PRESET="full"
+            S1_TRIALS=100000
+            S2_TRIALS=10000
+            SYMBOLS_OVERRIDE="$ALL_PAIRS"
+            ;;
+        4)
             PRESET="custom"
-            read -p "S1 trials per pair [10000]: " S1_TRIALS
-            S1_TRIALS="${S1_TRIALS:-10000}"
+            read -p "S1 trials per pair [50000]: " S1_TRIALS
+            S1_TRIALS="${S1_TRIALS:-50000}"
             read -p "S2 portfolio trials [5000]: " S2_TRIALS
             S2_TRIALS="${S2_TRIALS:-5000}"
             read -p "Hours of data [8760]: " HOURS
-            HOURS="${HOURS:-8760}"
+            HOURS="${HOURS:-26280}"
             read -p "Max workers (empty=auto): " WORKERS
             WORKERS="${WORKERS:-}"
             echo ""
             echo "Pairs:"
-            echo "  1) Core 3 (BTC, ETH, SOL)"
-            echo "  2) All 15 (full cluster set)"
-            echo "  3) Custom list"
-            read -p "Select (1-3) [1]: " pair_choice
+            echo "  1) All 15 (full cluster set)"
+            echo "  2) Custom list"
+            read -p "Select (1-2) [1]: " pair_choice
             case "${pair_choice:-1}" in
-                1) SYMBOLS_OVERRIDE="$CORE_PAIRS" ;;
-                2) SYMBOLS_OVERRIDE="$ALL_PAIRS" ;;
-                3)
+                1) SYMBOLS_OVERRIDE="$ALL_PAIRS" ;;
+                2)
                     read -p "Symbols (space-separated, e.g. BTC/USDT SOL/USDT): " SYMBOLS_OVERRIDE
                     ;;
             esac
@@ -318,11 +307,11 @@ fi
 
 S1_TRIALS="${S1_TRIALS:-10000}"
 S2_TRIALS="${S2_TRIALS:-5000}"
-HOURS="${HOURS:-8760}"
+HOURS="${HOURS:-26280}"
 
-# If no symbols specified at all, use core 3
+# If no symbols specified at all, use all 15
 if [ -z "$SYMBOLS_OVERRIDE" ]; then
-    SYMBOLS_OVERRIDE="$CORE_PAIRS"
+    SYMBOLS_OVERRIDE="$ALL_PAIRS"
 fi
 
 # Count symbols
