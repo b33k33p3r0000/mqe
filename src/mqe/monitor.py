@@ -68,6 +68,12 @@ class RunInfo:
     worst_pair_calmar: Optional[float] = None
     s2_max_concurrent: Optional[int] = None
 
+    # Additional metrics (from portfolio_metrics.json)
+    win_rate: Optional[float] = None
+    sortino: Optional[float] = None
+    avg_hold_bars: Optional[float] = None
+    profitable_months_ratio: Optional[float] = None
+
 
 @dataclass
 class LivePairStatus:
@@ -161,6 +167,12 @@ def load_run(run_dir: Path) -> Optional[RunInfo]:
             info.portfolio_pnl = portfolio_metrics.get("total_pnl_pct")
             info.portfolio_trades = portfolio_metrics.get("trades", 0)
             info.portfolio_equity = portfolio_metrics.get("equity")
+            info.win_rate = portfolio_metrics.get("win_rate")
+            info.sortino = portfolio_metrics.get("sortino_ratio")
+            info.avg_hold_bars = portfolio_metrics.get("avg_hold_bars")
+            info.profitable_months_ratio = portfolio_metrics.get(
+                "profitable_months_ratio",
+            )
 
         # S2 objectives
         if s2_result:
@@ -390,6 +402,12 @@ def render_table(runs: List[RunInfo]) -> Table:
     table.add_column("PnL%", justify="right")
     table.add_column("Trades", justify="right")
     table.add_column("Equity", justify="right")
+    table.add_column("WinR%", justify="right")
+    table.add_column("Sortino", justify="right")
+    table.add_column("W.Calm", justify="right")
+    table.add_column("MaxC", justify="right")
+    table.add_column("Hold", justify="right")
+    table.add_column("PrMo%", justify="right")
 
     for info in runs:
         status = _status_text(info)
@@ -428,6 +446,44 @@ def render_table(runs: List[RunInfo]) -> Table:
             if info.portfolio_equity is not None:
                 equity_str = f"${info.portfolio_equity:,.0f}"
 
+            # Color Win Rate
+            wr_str = _fmt_float(info.win_rate, 1) if info.win_rate is not None else "-"
+            wr_style = ""
+            if info.win_rate is not None:
+                if info.win_rate >= 50:
+                    wr_style = "green"
+                elif info.win_rate >= 40:
+                    wr_style = "yellow"
+                else:
+                    wr_style = "red"
+
+            # Color Sortino
+            sortino_str = _fmt_float(info.sortino, 2) if info.sortino is not None else "-"
+            sortino_style = ""
+            if info.sortino is not None:
+                if info.sortino >= 2.0:
+                    sortino_style = "green"
+                elif info.sortino >= 1.0:
+                    sortino_style = "yellow"
+                else:
+                    sortino_style = "red"
+
+            # Worst pair Calmar
+            wcalm_str = _fmt_float(info.worst_pair_calmar, 1)
+
+            # Profitable months ratio (0-1 → %)
+            prmo_str = "-"
+            prmo_style = ""
+            if info.profitable_months_ratio is not None:
+                prmo_val = info.profitable_months_ratio * 100
+                prmo_str = f"{prmo_val:.0f}"
+                if prmo_val >= 60:
+                    prmo_style = "green"
+                elif prmo_val >= 45:
+                    prmo_style = "yellow"
+                else:
+                    prmo_style = "red"
+
             table.add_row(
                 info.run_id,
                 info.tag or "-",
@@ -441,6 +497,12 @@ def render_table(runs: List[RunInfo]) -> Table:
                 _fmt_pct(info.portfolio_pnl),
                 str(info.portfolio_trades),
                 equity_str,
+                Text(wr_str, style=wr_style),
+                Text(sortino_str, style=sortino_style),
+                wcalm_str,
+                _fmt_int(info.s2_max_concurrent),
+                _fmt_float(info.avg_hold_bars, 0) if info.avg_hold_bars is not None else "-",
+                Text(prmo_str, style=prmo_style),
             )
         else:
             # Running/partial — minimal info
@@ -451,12 +513,7 @@ def render_table(runs: List[RunInfo]) -> Table:
                 str(info.n_symbols) if info.n_symbols > 0 else "?",
                 f"{info.s1_trials}/?" if info.s1_trials else "?/?",
                 Text("-"),
-                "-",
-                "-",
-                "-",
-                "-",
-                "-",
-                "-",
+                *(["-"] * 12),
             )
 
     return table
@@ -517,6 +574,8 @@ def render_live_table(
     table.add_column("Value", justify="right")
     table.add_column("Sharpe", justify="right")
     table.add_column("DD", justify="right")
+    table.add_column("Trades", justify="right")
+    table.add_column("PnL%", justify="right")
 
     for p in pairs:
         icon_char, icon_style = _LIVE_STATUS_ICONS.get(
@@ -524,14 +583,19 @@ def render_live_table(
         )
         icon = Text(icon_char, style=icon_style)
 
+        # Completed pairs: show full progress
+        completed = p.trials_completed
+        if p.status == "done" and p.trials_total > 0:
+            completed = p.trials_total
+
         # Trials count
         if p.trials_total > 0:
-            trials_str = f"{p.trials_completed:,}/{p.trials_total:,}"
+            trials_str = f"{completed:,}/{p.trials_total:,}"
         else:
             trials_str = "-"
 
         # Progress bar
-        bar = _progress_bar(p.trials_completed, p.trials_total)
+        bar = _progress_bar(completed, p.trials_total)
 
         # Value
         has_value = p.trials_completed > 0
@@ -559,6 +623,15 @@ def render_live_table(
             else:
                 dd_style = "red"
 
+        # Trades
+        trades_str = str(p.best_trades) if has_value and p.best_trades > 0 else "-"
+
+        # PnL%
+        pnl_str = _fmt_pct(p.best_pnl_pct) if has_value else "-"
+        pnl_style = ""
+        if has_value and p.best_pnl_pct != 0:
+            pnl_style = "green" if p.best_pnl_pct > 0 else "red"
+
         table.add_row(
             icon,
             p.symbol,
@@ -567,12 +640,18 @@ def render_live_table(
             value_str,
             Text(sharpe_str, style=sharpe_style),
             Text(dd_str, style=dd_style),
+            trades_str,
+            Text(pnl_str, style=pnl_style),
         )
 
     # Caption: summary stats
     n_done = sum(1 for p in pairs if p.status == "done")
     n_total = len(pairs)
-    trials_done = sum(p.trials_completed for p in pairs)
+    trials_done = sum(
+        p.trials_total if p.status == "done" and p.trials_total > 0
+        else p.trials_completed
+        for p in pairs
+    )
     trials_total = sum(p.trials_total for p in pairs)
     trials_pct = (trials_done / trials_total * 100) if trials_total > 0 else 0
     elapsed_str = _format_elapsed(elapsed_s)

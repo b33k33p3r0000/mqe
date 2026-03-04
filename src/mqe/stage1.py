@@ -336,7 +336,7 @@ class ProgressCallback:
         symbol: str,
         output_dir: Path,
         n_trials_total: int,
-        interval: int = 500,
+        interval: int = 100,
     ) -> None:
         self.symbol = symbol
         self.safe_name = symbol.replace("/", "_")
@@ -397,7 +397,7 @@ def run_stage1_pair(
     test_size: float = 0.20,
     allow_flip: int = 0,
     output_dir: Path | None = None,
-    progress_interval: int = 500,
+    progress_interval: int = 100,
     n_jobs: int = 1,
 ) -> dict[str, Any]:
     """Run Stage 1 optimization for a single pair.
@@ -415,7 +415,7 @@ def run_stage1_pair(
         test_size: Test window fraction (default 0.20).
         allow_flip: Fixed allow_flip value (0=selective, 1=always-in).
         output_dir: Directory for progress/result files (None = no file output).
-        progress_interval: Write progress every N trials (default 500).
+        progress_interval: Write progress every N trials (default 100).
         n_jobs: Number of parallel trial workers per pair (default 1).
             With n_jobs > 1, Optuna uses ThreadPoolExecutor + constant_liar
             to run multiple trials concurrently. Numba-compiled backtest
