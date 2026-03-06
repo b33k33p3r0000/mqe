@@ -10,6 +10,7 @@ from mqe.stage1 import (
     ProgressCallback,
     compute_objective_score,
     compute_awf_splits,
+    compute_trials,
     build_objective,
     create_sampler,
     run_stage1_pair,
@@ -326,3 +327,43 @@ class TestProgressCallback:
         progress_file = tmp_path / "stage1" / "SOL_USDT_progress.json"
         data = json.loads(progress_file.read_text())
         assert "symbol" in data
+
+
+# ─── compute_trials ────────────────────────────────────────────────────────
+
+
+class TestComputeTrials:
+    def test_compute_trials_long_data(self):
+        assert compute_trials(50000, base_trials=100_000) == 100_000
+
+    def test_compute_trials_medium_data(self):
+        assert compute_trials(30000, base_trials=100_000) == 70_000
+
+    def test_compute_trials_short_data(self):
+        assert compute_trials(20000, base_trials=100_000) == 40_000
+
+    def test_compute_trials_boundary_long(self):
+        assert compute_trials(43800, base_trials=100_000) == 100_000
+
+    def test_compute_trials_boundary_medium(self):
+        assert compute_trials(26280, base_trials=100_000) == 70_000
+
+
+# ─── AWF splits count by data length ──────────────────────────────────────
+
+
+class TestAwfSplitsCount:
+    def test_awf_splits_5_for_long_data(self):
+        splits = compute_awf_splits(30000)
+        assert splits is not None
+        assert len(splits) == 5
+
+    def test_awf_splits_3_for_medium_data(self):
+        splits = compute_awf_splits(20000)
+        assert splits is not None
+        assert len(splits) == 3
+
+    def test_awf_splits_2_for_short_data(self):
+        splits = compute_awf_splits(8000)
+        assert splits is not None
+        assert len(splits) == 2

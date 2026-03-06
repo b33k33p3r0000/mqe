@@ -31,9 +31,11 @@ import optuna
 import pandas as pd
 
 from mqe.config import (
+    ANCHORED_WF_LONG_THRESHOLD_HOURS,
     ANCHORED_WF_MIN_DATA_HOURS,
     ANCHORED_WF_SHORT_THRESHOLD_HOURS,
     ANCHORED_WF_SPLITS,
+    ANCHORED_WF_SPLITS_LONG,
     ANCHORED_WF_SPLITS_SHORT,
     BASE_TF,
     DEFAULT_TRIALS_STAGE1,
@@ -50,6 +52,10 @@ from mqe.config import (
     STARTUP_TRIALS_RATIO,
     TPE_CONSIDER_ENDPOINTS,
     TPE_N_EI_CANDIDATES,
+    TRIALS_LONG_THRESHOLD_HOURS,
+    TRIALS_MEDIUM_THRESHOLD_HOURS,
+    TRIALS_RATIO_MEDIUM,
+    TRIALS_RATIO_SHORT,
 )
 from mqe.core.backtest import simulate_trades_fast
 from mqe.core.indicators import rsi as compute_rsi
@@ -57,6 +63,22 @@ from mqe.core.metrics import calculate_metrics
 from mqe.core.strategy import MultiPairStrategy
 
 logger = logging.getLogger("mqe.stage1")
+
+
+# ─── DATA-ADAPTIVE TRIALS ──────────────────────────────────────────────────
+
+
+def compute_trials(n_bars: int, base_trials: int = DEFAULT_TRIALS_STAGE1) -> int:
+    """Compute data-adaptive trial count.
+
+    Pairs with less data get fewer trials to reduce overfit opportunity.
+    """
+    if n_bars >= TRIALS_LONG_THRESHOLD_HOURS:
+        return base_trials
+    elif n_bars >= TRIALS_MEDIUM_THRESHOLD_HOURS:
+        return int(base_trials * TRIALS_RATIO_MEDIUM)
+    else:
+        return int(base_trials * TRIALS_RATIO_SHORT)
 
 
 # ─── AWF SPLITS ─────────────────────────────────────────────────────────────
@@ -93,11 +115,12 @@ def compute_awf_splits(
         return splits
 
     # Static splits -- add purge gap
-    base_splits = (
-        ANCHORED_WF_SPLITS_SHORT
-        if total_hours < ANCHORED_WF_SHORT_THRESHOLD_HOURS
-        else ANCHORED_WF_SPLITS
-    )
+    if total_hours >= ANCHORED_WF_LONG_THRESHOLD_HOURS:
+        base_splits = ANCHORED_WF_SPLITS_LONG
+    elif total_hours >= ANCHORED_WF_SHORT_THRESHOLD_HOURS:
+        base_splits = ANCHORED_WF_SPLITS
+    else:
+        base_splits = ANCHORED_WF_SPLITS_SHORT
     return [
         {
             "train_end": s["train_end"],
