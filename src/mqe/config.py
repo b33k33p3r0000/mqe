@@ -22,6 +22,8 @@ SYMBOLS = [
     "SUI/USDT", "DOT/USDT", "ADA/USDT",
     "NEAR/USDT", "LTC/USDT", "APT/USDT",
     "ARB/USDT", "OP/USDT", "INJ/USDT",
+    "AVAX/USDT", "DOGE/USDT", "ATOM/USDT",
+    "FIL/USDT", "UNI/USDT",
 ]
 TREND_TFS = ["4h", "8h", "1d"]
 BASE_TF = "1h"
@@ -53,6 +55,11 @@ SLIPPAGE_MAP: dict[str, float] = {
     "ARB/USDT": 0.0030,
     "OP/USDT": 0.0030,
     "INJ/USDT": 0.0035,
+    "AVAX/USDT": 0.0020,
+    "DOGE/USDT": 0.0015,
+    "ATOM/USDT": 0.0022,
+    "FIL/USDT": 0.0025,
+    "UNI/USDT": 0.0022,
 }
 DEFAULT_SLIPPAGE = float(os.environ.get("SLIPPAGE", "0.0015"))
 
@@ -214,6 +221,56 @@ PAIR_PROFILES: dict[str, dict] = {
         "oi_mc_ratio": 0.10,
         "volume_24h_min": 0.05e9,
     },
+    "AVAX/USDT": {
+        "tier": "A-",
+        "cluster": "smart_contract_l1",
+        "btc_corr": 0.72,
+        "ann_vol": 0.90,
+        "atr_1h_pct": 0.010,
+        "slippage_bps": 20,
+        "oi_mc_ratio": 0.10,
+        "volume_24h_min": 0.2e9,
+    },
+    "DOGE/USDT": {
+        "tier": "B+",
+        "cluster": "meme",
+        "btc_corr": 0.65,
+        "ann_vol": 0.95,
+        "atr_1h_pct": 0.011,
+        "slippage_bps": 15,
+        "oi_mc_ratio": 0.04,
+        "volume_24h_min": 0.5e9,
+    },
+    "ATOM/USDT": {
+        "tier": "B",
+        "cluster": "cosmos",
+        "btc_corr": 0.70,
+        "ann_vol": 0.75,
+        "atr_1h_pct": 0.008,
+        "slippage_bps": 22,
+        "oi_mc_ratio": 0.05,
+        "volume_24h_min": 0.1e9,
+    },
+    "FIL/USDT": {
+        "tier": "B",
+        "cluster": "storage",
+        "btc_corr": 0.65,
+        "ann_vol": 0.95,
+        "atr_1h_pct": 0.012,
+        "slippage_bps": 25,
+        "oi_mc_ratio": 0.07,
+        "volume_24h_min": 0.08e9,
+    },
+    "UNI/USDT": {
+        "tier": "B",
+        "cluster": "defi",
+        "btc_corr": 0.72,
+        "ann_vol": 0.85,
+        "atr_1h_pct": 0.010,
+        "slippage_bps": 22,
+        "oi_mc_ratio": 0.06,
+        "volume_24h_min": 0.1e9,
+    },
 }
 
 
@@ -228,10 +285,14 @@ def get_cluster(symbol: str) -> str:
 CLUSTER_DEFINITIONS: dict[str, list[str]] = {
     "blue_chip": ["BTC/USDT", "LTC/USDT"],
     "smart_contract_l1": ["ETH/USDT", "SOL/USDT", "ADA/USDT", "DOT/USDT",
-                          "NEAR/USDT", "APT/USDT", "SUI/USDT"],
+                          "NEAR/USDT", "APT/USDT", "SUI/USDT", "AVAX/USDT"],
     "l2": ["ARB/USDT", "OP/USDT"],
     "exchange": ["BNB/USDT"],
     "narrative": ["XRP/USDT", "LINK/USDT", "INJ/USDT"],
+    "meme": ["DOGE/USDT"],
+    "cosmos": ["ATOM/USDT"],
+    "defi": ["UNI/USDT"],
+    "storage": ["FIL/USDT"],
 }
 
 CLUSTER_MAX_CONCURRENT: dict[str, int] = {
@@ -240,6 +301,10 @@ CLUSTER_MAX_CONCURRENT: dict[str, int] = {
     "l2": 1,
     "exchange": 1,
     "narrative": 2,
+    "meme": 1,
+    "cosmos": 1,
+    "defi": 1,
+    "storage": 1,
 }
 
 # ─── PER-TIER SEARCH SPACE ─────────────────────────────────────────────────
