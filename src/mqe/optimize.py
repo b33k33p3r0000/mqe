@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import logging
 import os
 import time
@@ -492,6 +493,7 @@ def run_pipeline(
     # ── 5. Stage 2: portfolio optimization ──
     stage2_result = run_stage2(
         all_data, pair_signals, pair_params, stage2_trials,
+        output_dir=output_dir,
         tier_multipliers=tier_multipliers,
     )
     save_json(output_dir / "stage2_result.json", stage2_result)
@@ -529,6 +531,128 @@ def run_pipeline(
     return combined
 
 
+def resume_pipeline(
+    run_dir: str,
+    stage2_trials: int = DEFAULT_TRIALS_STAGE2,
+    hours: int | None = None,
+    tag: str = "",
+    n_jobs: int | None = None,
+) -> dict[str, Any]:
+    """Resume MQE pipeline from Stage 2 using existing Stage 1 results.
+
+    Loads Stage 1 result JSONs from a previous run directory, fetches fresh
+    data, re-computes signals, then runs Stage 2 + evaluation + reporting.
+
+    Args:
+        run_dir: Path to existing run directory (e.g. results/20260304_194135).
+        stage2_trials: NSGA-II trials for Stage 2.
+        hours: Hours of data to fetch (default: from Stage 1 metadata or 26280).
+        tag: Optional run tag for identification.
+        n_jobs: Parallel trial threads (unused in Stage 2, kept for API parity).
+
+    Returns:
+        Dict with stage1_results, stage2_results, and metadata.
+    """
+    output_dir = Path(run_dir)
+    stage1_dir = output_dir / "stage1"
+
+    if not stage1_dir.exists():
+        raise FileNotFoundError(f"Stage 1 directory not found: {stage1_dir}")
+
+    # ── 1. Load Stage 1 results ──
+    stage1_results: dict[str, dict[str, Any]] = {}
+    for path in sorted(stage1_dir.glob("*.json")):
+        if "_progress" in path.name:
+            continue
+        result = json.load(open(path))
+        symbol = result["symbol"]
+        stage1_results[symbol] = result
+
+    if not stage1_results:
+        raise ValueError(f"No Stage 1 result JSONs found in {stage1_dir}")
+
+    symbols = list(stage1_results.keys())
+    logger.info(
+        "Resume pipeline: loaded %d Stage 1 results from %s",
+        len(symbols), stage1_dir,
+    )
+
+    # ── 2. Determine hours for data fetch ──
+    if hours is None:
+        hours = 26280  # default: 3 years
+    logger.info("Resume pipeline: fetching %d hours of data for %d symbols", hours, len(symbols))
+
+    # ── 3. Fetch data ──
+    all_data = fetch_all_data(symbols, hours)
+
+    # ── 4. Re-compute signals with Stage 1 params ──
+    pair_params = {
+        sym: _extract_strategy_params(res)
+        for sym, res in stage1_results.items()
+    }
+    btc_params = pair_params.get("BTC/USDT")
+    pair_signals = precompute_all_signals(all_data, pair_params, btc_params)
+
+    # ── 5. Per-pair evaluation for tier assignment ──
+    per_pair_metrics = run_per_pair_evaluation(
+        all_data, pair_signals, pair_params, output_dir,
+    )
+    tier_assignments = assign_tiers(per_pair_metrics)
+    tier_multipliers = {sym: info["multiplier"] for sym, info in tier_assignments.items()}
+
+    for sym, info in sorted(tier_assignments.items(), key=lambda x: x[1]["sharpe"], reverse=True):
+        logger.info("Tier %s: %s (Sharpe %.2f, mult %.2f)", info["tier"], sym, info["sharpe"], info["multiplier"])
+    active_count = sum(1 for t in tier_assignments.values() if t["tier"] != "X")
+    excluded_count = sum(1 for t in tier_assignments.values() if t["tier"] == "X")
+    logger.info("Tiers: %d active, %d excluded (Tier X)", active_count, excluded_count)
+
+    # ── 6. Stage 2: portfolio optimization ──
+    stage2_result = run_stage2(
+        all_data, pair_signals, pair_params, stage2_trials,
+        output_dir=output_dir,
+        tier_multipliers=tier_multipliers,
+    )
+    save_json(output_dir / "stage2_result.json", stage2_result)
+
+    # ── 7. Final evaluation ──
+    eval_result = run_final_evaluation(
+        all_data, pair_signals, pair_params, stage2_result, output_dir,
+        per_pair_metrics=per_pair_metrics,
+        tier_multipliers=tier_multipliers,
+    )
+
+    # ── 8. Save combined results ──
+    # Reconstruct stage1_trials from loaded results
+    stage1_trials_val = max(
+        (r.get("n_trials_requested", 0) for r in stage1_results.values()),
+        default=0,
+    )
+    combined: dict[str, Any] = {
+        "symbols": symbols,
+        "stage1_trials": stage1_trials_val,
+        "stage2_trials": stage2_trials,
+        "tag": tag,
+        "hours": hours,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "resumed_from": str(output_dir),
+        "stage1_results": stage1_results,
+        "stage2_results": stage2_result,
+        "tier_assignments": tier_assignments,
+    }
+    save_json(output_dir / "pipeline_result.json", combined)
+
+    # ── 9. Analyze + Report ──
+    analysis = analyze_run(combined, eval_result)
+    print_report(analysis, combined, eval_result)
+    save_markdown_report(
+        output_dir / "report.md", combined, eval_result, analysis,
+    )
+    notify_complete(analysis)
+
+    logger.info("Resume pipeline complete. Results saved to %s", output_dir)
+    return combined
+
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="MQE Optimization Pipeline")
@@ -543,6 +667,10 @@ def main() -> None:
         help="Parallel trial threads per pair (default: auto from CPU count)",
     )
     parser.add_argument("--output", type=str, default=None)
+    parser.add_argument(
+        "--resume", type=str, default=None, metavar="PATH",
+        help="Resume from Stage 2 using existing run directory (e.g. results/20260304_194135)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -550,17 +678,28 @@ def main() -> None:
         format="%(asctime)s [%(name)s] %(message)s",
     )
 
-    output_dir = Path(args.output) if args.output else None
-    run_pipeline(
-        symbols=args.symbols,
-        stage1_trials=args.s1_trials,
-        stage2_trials=args.s2_trials,
-        hours=args.hours,
-        output_dir=output_dir,
-        tag=args.tag,
-        max_workers=args.workers,
-        n_jobs=args.s1_jobs,
-    )
+    if args.resume:
+        # Resume mode: skip Stage 1, run Stage 2+ from existing results
+        resume_hours = args.hours if args.hours != 8760 else None
+        resume_pipeline(
+            run_dir=args.resume,
+            stage2_trials=args.s2_trials,
+            hours=resume_hours,
+            tag=args.tag,
+            n_jobs=args.s1_jobs,
+        )
+    else:
+        output_dir = Path(args.output) if args.output else None
+        run_pipeline(
+            symbols=args.symbols,
+            stage1_trials=args.s1_trials,
+            stage2_trials=args.s2_trials,
+            hours=args.hours,
+            output_dir=output_dir,
+            tag=args.tag,
+            max_workers=args.workers,
+            n_jobs=args.s1_jobs,
+        )
 
 
 if __name__ == "__main__":

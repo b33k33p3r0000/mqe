@@ -20,7 +20,10 @@ def rsi(series: pd.Series, length: int = 14) -> pd.Series:
     avg_loss = pd.Series(loss, index=series.index).rolling(length, min_periods=length).mean()
     rs = avg_gain / (avg_loss.replace(0, np.nan))
     result = 100 - (100 / (1 + rs))
-    return result.fillna(100.0)
+    # Avoid pandas fillna() — triggers numpy.rec import bug under numpy 2.x
+    vals = result.to_numpy()
+    vals = np.where(np.isnan(vals), 100.0, vals)
+    return pd.Series(vals, index=series.index)
 
 
 def macd(

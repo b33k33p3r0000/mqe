@@ -18,7 +18,12 @@ Global params optimized:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import tempfile
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
@@ -156,6 +161,67 @@ def build_portfolio_objective(
     return objective
 
 
+# ─── PROGRESS CALLBACK ─────────────────────────────────────────────────────
+
+
+class Stage2ProgressCallback:
+    """Optuna callback that writes Stage 2 progress JSON every N trials.
+
+    Writes to: {output_dir}/stage2_progress.json
+    Atomic write via tmp file + os.replace to prevent partial reads.
+    """
+
+    def __init__(
+        self,
+        output_dir: Path,
+        n_trials_total: int,
+        interval: int = 50,
+    ) -> None:
+        self.output_dir = Path(output_dir)
+        self.n_trials_total = n_trials_total
+        self.interval = interval
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def __call__(
+        self,
+        study: optuna.study.Study,
+        trial: optuna.trial.FrozenTrial,
+    ) -> None:
+        if (trial.number + 1) % self.interval != 0:
+            return
+
+        # Pareto front stats
+        best_trials = study.best_trials
+        pareto_size = len(best_trials)
+
+        best_portfolio_calmar = 0.0
+        best_worst_pair_calmar = 0.0
+        if best_trials:
+            top = max(best_trials, key=lambda t: t.values[0])
+            best_portfolio_calmar = top.values[0]
+            best_worst_pair_calmar = top.values[1]
+
+        progress = {
+            "trials_completed": trial.number + 1,
+            "trials_total": self.n_trials_total,
+            "best_portfolio_calmar": round(best_portfolio_calmar, 6),
+            "best_worst_pair_calmar": round(best_worst_pair_calmar, 6),
+            "pareto_front_size": pareto_size,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+        }
+
+        progress_path = self.output_dir / "stage2_progress.json"
+        try:
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self.output_dir), suffix=".tmp",
+            )
+            with os.fdopen(fd, "w") as f:
+                json.dump(progress, f, indent=2)
+            os.replace(tmp_path, str(progress_path))
+        except OSError:
+            logger.debug("Failed to write Stage 2 progress")
+
+
 # ─── RUN STAGE 2 ───────────────────────────────────────────────────────────
 
 
@@ -165,6 +231,7 @@ def run_stage2(
     pair_params: dict[str, dict[str, Any]],
     n_trials: int = DEFAULT_TRIALS_STAGE2,
     seed: int = 42,
+    output_dir: Path | None = None,
     tier_multipliers: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Run Stage 2 portfolio optimization with NSGA-II.
@@ -175,6 +242,7 @@ def run_stage2(
         pair_params: Dict of {symbol: {param_name: value}} per pair (from Stage 1).
         n_trials: Number of NSGA-II trials.
         seed: Random seed for reproducibility.
+        output_dir: Directory for progress files (None = no file output).
         tier_multipliers: Tier-based position sizing multipliers per symbol.
 
     Returns:
@@ -200,8 +268,17 @@ def run_stage2(
         sampler=sampler,
     )
 
+    callbacks: list[Any] = []
+    if output_dir is not None:
+        callbacks.append(
+            Stage2ProgressCallback(output_dir, n_trials, interval=50)
+        )
+
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    study.optimize(
+        objective, n_trials=n_trials, show_progress_bar=False,
+        callbacks=callbacks,
+    )
 
     # Select best from Pareto front
     best_trials = study.best_trials

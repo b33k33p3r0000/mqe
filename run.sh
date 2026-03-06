@@ -51,6 +51,9 @@ Process management:
   ./run.sh logs            List recent log files
   ./run.sh monitor         Live dashboard for active run
   ./run.sh monitor --once  Single snapshot of active run
+  ./run.sh resume          Resume latest incomplete run (Stage 2+)
+  ./run.sh resume PATH     Resume specific run directory
+  ./run.sh resume --s2-trials 1000   Override S2 trial count
 
 EOF
 }
@@ -201,6 +204,40 @@ if [[ $# -gt 0 ]]; then
                 MONITOR_ARGS="--live"
             fi
             exec uv run python -m mqe.monitor --results-dir "$SCRIPT_DIR/results" $MONITOR_ARGS
+            ;;
+        resume)
+            shift
+            # Find run dir: explicit path or latest incomplete
+            RESUME_DIR=""
+            RESUME_ARGS=""
+            if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                RESUME_DIR="$1"
+                shift
+            else
+                # Auto-detect: latest dir without pipeline_result.json
+                for d in $(ls -dt "$SCRIPT_DIR/results"/*/ 2>/dev/null); do
+                    if [ ! -f "$d/pipeline_result.json" ] && [ -d "$d/stage1" ]; then
+                        RESUME_DIR="$d"
+                        break
+                    fi
+                done
+            fi
+            if [ -z "$RESUME_DIR" ]; then
+                echo "No incomplete run found to resume."
+                exit 1
+            fi
+            # Pass remaining args (--s2-trials, --tag, etc.)
+            echo ""
+            echo "═══════════════════════════════════════════════════════"
+            echo "  MQE Resume — Stage 2 + Evaluation"
+            echo "═══════════════════════════════════════════════════════"
+            echo "  Run dir: $RESUME_DIR"
+            S1_COUNT=$(ls "$RESUME_DIR/stage1"/*.json 2>/dev/null | grep -v _progress | wc -l | tr -d ' ')
+            echo "  S1 pairs: $S1_COUNT"
+            echo "  Extra args: $*"
+            echo "═══════════════════════════════════════════════════════"
+            echo ""
+            exec uv run python -m mqe.optimize --resume "$RESUME_DIR" "$@"
             ;;
     esac
 fi

@@ -91,6 +91,18 @@ class LivePairStatus:
     timestamp: str = ""
 
 
+@dataclass
+class Stage2Progress:
+    """Progress info for Stage 2 portfolio optimization."""
+
+    status: str = "pending"  # "pending", "running", "done"
+    trials_completed: int = 0
+    trials_total: int = 0
+    best_portfolio_calmar: float = 0.0
+    best_worst_pair_calmar: float = 0.0
+    pareto_front_size: int = 0
+
+
 # ─── Data Loading ─────────────────────────────────────────────────────────────
 
 
@@ -277,6 +289,37 @@ def load_live_run(run_dir: Path) -> List[LivePairStatus]:
         ))
 
     return pairs
+
+
+def load_stage2_progress(run_dir: Path) -> Stage2Progress:
+    """Detect Stage 2 status from run directory.
+
+    Checks for stage2_progress.json (running) and stage2_result.json (done).
+    """
+    s2_result = _load_json(run_dir / "stage2_result.json")
+    if s2_result:
+        obj = s2_result.get("objectives", {})
+        return Stage2Progress(
+            status="done",
+            trials_completed=s2_result.get("n_trials", 0),
+            trials_total=s2_result.get("n_trials", 0),
+            best_portfolio_calmar=obj.get("portfolio_calmar", 0.0),
+            best_worst_pair_calmar=obj.get("worst_pair_calmar", 0.0),
+            pareto_front_size=s2_result.get("pareto_front_size", 0),
+        )
+
+    s2_progress = _load_json(run_dir / "stage2_progress.json")
+    if s2_progress:
+        return Stage2Progress(
+            status="running",
+            trials_completed=s2_progress.get("trials_completed", 0),
+            trials_total=s2_progress.get("trials_total", 0),
+            best_portfolio_calmar=s2_progress.get("best_portfolio_calmar", 0.0),
+            best_worst_pair_calmar=s2_progress.get("best_worst_pair_calmar", 0.0),
+            pareto_front_size=s2_progress.get("pareto_front_size", 0),
+        )
+
+    return Stage2Progress(status="pending")
 
 
 def find_active_run(results_dir: Path) -> Optional[Path]:
@@ -552,6 +595,7 @@ def render_live_table(
     pairs: List[LivePairStatus],
     tag: str = "",
     elapsed_s: int = 0,
+    s2_progress: Optional[Stage2Progress] = None,
 ) -> Table:
     """Render Rich Table for live optimization progress."""
     title = "MQE Live"
@@ -657,10 +701,37 @@ def render_live_table(
     elapsed_str = _format_elapsed(elapsed_s)
 
     caption = (
-        f"Pairs {n_done}/{n_total} | "
+        f"S1: Pairs {n_done}/{n_total} | "
         f"Trials {trials_done:,}/{trials_total:,} ({trials_pct:.0f}%) | "
         f"Elapsed {elapsed_str}"
     )
+
+    # Stage 2 status line
+    if s2_progress is not None and s2_progress.status != "pending":
+        s2 = s2_progress
+        if s2.status == "running":
+            s2_bar = _progress_bar(s2.trials_completed, s2.trials_total, width=10)
+            s2_pct = (
+                s2.trials_completed / s2.trials_total * 100
+                if s2.trials_total > 0 else 0
+            )
+            caption += (
+                f"\nS2: {s2_bar} {s2.trials_completed:,}/{s2.trials_total:,} "
+                f"({s2_pct:.0f}%) | "
+                f"Calmar {s2.best_portfolio_calmar:.2f} | "
+                f"W.Calm {s2.best_worst_pair_calmar:.2f} | "
+                f"Pareto {s2.pareto_front_size}"
+            )
+        elif s2.status == "done":
+            caption += (
+                f"\nS2: DONE ({s2.trials_total:,} trials) | "
+                f"Calmar {s2.best_portfolio_calmar:.2f} | "
+                f"W.Calm {s2.best_worst_pair_calmar:.2f} | "
+                f"Pareto {s2.pareto_front_size}"
+            )
+    elif n_done == n_total and n_total > 0:
+        caption += "\nS2: waiting..."
+
     table.caption = caption
 
     return table
@@ -699,8 +770,11 @@ def run_live_dashboard(
     if once:
         # Single snapshot
         pairs = load_live_run(run_dir)
+        s2 = load_stage2_progress(run_dir)
         elapsed_s = int(time.time() - start_time)
-        table = render_live_table(pairs, tag=tag or run_id, elapsed_s=elapsed_s)
+        table = render_live_table(
+            pairs, tag=tag or run_id, elapsed_s=elapsed_s, s2_progress=s2,
+        )
         console.print(table)
         return
 
@@ -711,9 +785,11 @@ def run_live_dashboard(
                 # Check for completion
                 if (run_dir / "pipeline_result.json").exists():
                     pairs = load_live_run(run_dir)
+                    s2 = load_stage2_progress(run_dir)
                     elapsed_s = int(time.time() - start_time)
                     table = render_live_table(
                         pairs, tag=tag or run_id, elapsed_s=elapsed_s,
+                        s2_progress=s2,
                     )
                     live.update(table)
                     console.print(
@@ -722,9 +798,11 @@ def run_live_dashboard(
                     break
 
                 pairs = load_live_run(run_dir)
+                s2 = load_stage2_progress(run_dir)
                 elapsed_s = int(time.time() - start_time)
                 table = render_live_table(
                     pairs, tag=tag or run_id, elapsed_s=elapsed_s,
+                    s2_progress=s2,
                 )
                 live.update(table)
                 time.sleep(refresh_interval)
