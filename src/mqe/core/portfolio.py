@@ -108,6 +108,7 @@ class PortfolioSimulator:
         starting_equity: float = STARTING_EQUITY,
         corr_matrix: dict[str, dict[str, float]] | None = None,
         corr_gate_threshold: float = CORRELATION_GATE_THRESHOLD,
+        tier_multipliers: dict[str, float] | None = None,
     ) -> None:
         self.pair_data = pair_data
         self.pair_signals = pair_signals
@@ -118,6 +119,7 @@ class PortfolioSimulator:
         self.starting_equity = starting_equity
         self.corr_matrix = corr_matrix or {}
         self.corr_gate_threshold = corr_gate_threshold
+        self.tier_multipliers = tier_multipliers or {}
 
         # Pre-extract base TF arrays per pair for fast bar access
         self.symbols = list(pair_data.keys())
@@ -392,6 +394,9 @@ class PortfolioSimulator:
             for sym in self.symbols:
                 if sym in open_symbols:
                     continue
+                # Skip Tier X pairs (excluded from trading)
+                if self.tier_multipliers.get(sym, 1.0) == 0.0:
+                    continue
                 if bar >= len(self._buy[sym]):
                     continue
                 if self._buy[sym][bar]:
@@ -421,7 +426,11 @@ class PortfolioSimulator:
                 filtered.append((sym, direction, strength))
 
             # ── 5. Rank by signal_strength descending ──
-            filtered.sort(key=lambda x: x[2], reverse=True)
+            tier_mults = self.tier_multipliers
+            filtered.sort(
+                key=lambda x: x[2] * tier_mults.get(x[0], 1.0),
+                reverse=True,
+            )
 
             # ── 6. Open positions ──
             for sym, direction, strength in filtered:
@@ -447,6 +456,7 @@ class PortfolioSimulator:
                 open_pair_list = [p.symbol for p in open_positions]
                 capital = compute_position_size(
                     sym, open_pair_list, cash, atr_dict, self.corr_matrix,
+                    tier_multiplier=self.tier_multipliers.get(sym, 1.0),
                 )
                 if capital <= 0:
                     continue

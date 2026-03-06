@@ -293,6 +293,118 @@ class TestShortPositions:
         assert len(shorts) >= 1
 
 
+class TestTierMultipliers:
+    """Tests for tier_multiplier signal ranking, pair exclusion, and defaults."""
+
+    def test_tier_x_pair_excluded(self):
+        """Tier X pair (multiplier=0) should never trade."""
+        n = 500
+        df = make_1h_ohlcv_pd(n_bars=n, seed=42)
+        data = resample_to_multi_tf(df)
+        pair_data = {"BTC/USDT": data, "ETH/USDT": data}
+        pair_signals = {
+            "BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
+            "ETH/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
+        }
+        pair_params = {
+            "BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168},
+            "ETH/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168},
+        }
+        sim = PortfolioSimulator(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+            tier_multipliers={"BTC/USDT": 1.0, "ETH/USDT": 0.0},
+        )
+        result = sim.run()
+        # ETH should have zero trades — it's Tier X
+        eth_trades = result.per_pair_trades.get("ETH/USDT", [])
+        assert len(eth_trades) == 0
+        # BTC should still trade
+        btc_trades = result.per_pair_trades.get("BTC/USDT", [])
+        assert len(btc_trades) > 0
+
+    def test_tier_multiplier_affects_ranking(self):
+        """Higher effective strength (signal * tier_mult) should be preferred."""
+        n = 500
+        np.random.seed(42)
+        df = make_1h_ohlcv_pd(n_bars=n, seed=42)
+        data = resample_to_multi_tf(df)
+
+        # Both pairs signal at the same bar with max_concurrent=5 so both pass filter.
+        # Deterministic signal strengths: BTC raw=0.5, ETH raw=0.9
+        btc_sig = _make_pair_signals(n, buy_bars=[250])
+        eth_sig = _make_pair_signals(n, buy_bars=[250])
+        btc_sig[3][250] = 0.5
+        eth_sig[3][250] = 0.9
+
+        pair_data = {"BTC/USDT": data, "ETH/USDT": data}
+        pair_signals = {"BTC/USDT": btc_sig, "ETH/USDT": eth_sig}
+        pair_params = {
+            "BTC/USDT": {"hard_stop_mult": 100.0, "trail_mult": 100.0, "max_hold_bars": 9999},
+            "ETH/USDT": {"hard_stop_mult": 100.0, "trail_mult": 100.0, "max_hold_bars": 9999},
+        }
+
+        # Without tier multipliers: ETH ranked first (0.9 > 0.5)
+        sim_no_tier = PortfolioSimulator(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+            max_concurrent=5,
+        )
+        result_no_tier = sim_no_tier.run()
+        # Both trade; first opened should be ETH (higher raw signal → ranked first)
+        bar250_trades = [t for t in result_no_tier.all_trades if t["entry_bar"] == 250]
+        assert len(bar250_trades) == 2
+        assert bar250_trades[0]["symbol"] == "ETH/USDT"
+
+        # With tier multipliers: BTC=2.0, ETH=0.5
+        # Effective: BTC=0.5*2.0=1.0, ETH=0.9*0.5=0.45 → BTC ranked first
+        sim_tier = PortfolioSimulator(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+            max_concurrent=5,
+            tier_multipliers={"BTC/USDT": 2.0, "ETH/USDT": 0.5},
+        )
+        result_tier = sim_tier.run()
+        bar250_trades_tier = [t for t in result_tier.all_trades if t["entry_bar"] == 250]
+        assert len(bar250_trades_tier) == 2
+        assert bar250_trades_tier[0]["symbol"] == "BTC/USDT"
+
+    def test_no_tier_multipliers_preserves_behavior(self):
+        """Default (no tier_multipliers) should work same as before."""
+        n = 500
+        df = make_1h_ohlcv_pd(n_bars=n, seed=42)
+        data = resample_to_multi_tf(df)
+        pair_data = {"BTC/USDT": data}
+        pair_signals = {"BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300])}
+        pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
+
+        # Without tier_multipliers (default)
+        sim_default = PortfolioSimulator(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+        )
+        assert sim_default.tier_multipliers == {}
+
+        # Explicit empty dict should also work
+        sim_none = PortfolioSimulator(
+            pair_data=pair_data,
+            pair_signals=pair_signals,
+            pair_params=pair_params,
+            tier_multipliers=None,
+        )
+        assert sim_none.tier_multipliers == {}
+
+        # Both should produce identical results
+        result_default = sim_default.run()
+        result_none = sim_none.run()
+        assert len(result_default.all_trades) == len(result_none.all_trades)
+        assert result_default.equity == result_none.equity
+
+
 class TestCorrGateThreshold:
     """Tests that corr_gate_threshold parameter overrides config constant."""
 
