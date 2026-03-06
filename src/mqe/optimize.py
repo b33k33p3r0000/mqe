@@ -52,7 +52,7 @@ from mqe.io import save_json, save_trades_csv
 from mqe.notify import notify_complete, notify_start
 from mqe.report import print_report, save_markdown_report
 from mqe.risk.correlation import compute_pairwise_correlation
-from mqe.stage1 import run_stage1_pair
+from mqe.stage1 import compute_trials, run_stage1_pair
 from mqe.stage2 import run_stage2
 
 logger = logging.getLogger("mqe.optimize")
@@ -125,28 +125,19 @@ def assign_tiers(
     return tiers
 
 
-def run_final_evaluation(
+def run_per_pair_evaluation(
     all_data: dict[str, dict[str, pd.DataFrame]],
     pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     pair_params: dict[str, dict[str, Any]],
-    stage2_result: dict[str, Any],
     output_dir: Path,
-) -> dict[str, Any]:
-    """Run final evaluation with best params from both stages.
-
-    Runs full per-pair backtests and portfolio sim to produce complete
-    trades and metrics for reporting.
-
-    Returns:
-        Dict with per_pair_metrics, portfolio_metrics, portfolio_result.
-    """
-    logger.info("Final evaluation: running full backtests with best params")
+) -> dict[str, dict[str, Any]]:
+    """Run per-pair backtests on full data. Used for tier assignment."""
+    logger.info("Per-pair evaluation: running full backtests for tier assignment")
     eval_dir = output_dir / "evaluation"
     eval_dir.mkdir(exist_ok=True)
     per_pair_dir = eval_dir / "per_pair_trades"
     per_pair_dir.mkdir(exist_ok=True)
 
-    # ── Per-pair full backtests ──
     per_pair_metrics: dict[str, dict[str, Any]] = {}
 
     for symbol in pair_signals:
@@ -170,11 +161,42 @@ def run_final_evaluation(
         )
         per_pair_metrics[symbol] = _metrics_to_dict(metrics)
 
-        # Save per-pair trades
         safe_name = symbol.replace("/", "_")
         save_trades_csv(per_pair_dir / f"{safe_name}.csv", result.trades)
 
     save_json(eval_dir / "per_pair_metrics.json", per_pair_metrics)
+    return per_pair_metrics
+
+
+def run_final_evaluation(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    pair_params: dict[str, dict[str, Any]],
+    stage2_result: dict[str, Any],
+    output_dir: Path,
+    per_pair_metrics: dict[str, dict[str, Any]] | None = None,
+    tier_multipliers: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    """Run final evaluation with best params from both stages.
+
+    Runs full per-pair backtests and portfolio sim to produce complete
+    trades and metrics for reporting.
+
+    Args:
+        per_pair_metrics: Pre-computed per-pair metrics (skips backtest loop).
+        tier_multipliers: Tier-based position sizing multipliers per symbol.
+
+    Returns:
+        Dict with per_pair_metrics, portfolio_metrics, portfolio_result.
+    """
+    logger.info("Final evaluation: running full backtests with best params")
+    eval_dir = output_dir / "evaluation"
+    eval_dir.mkdir(exist_ok=True)
+
+    if per_pair_metrics is None:
+        per_pair_metrics = run_per_pair_evaluation(
+            all_data, pair_signals, pair_params, output_dir,
+        )
 
     # ── Portfolio sim with best S2 params ──
     s2_params = stage2_result.get("portfolio_params", {})
@@ -204,6 +226,7 @@ def run_final_evaluation(
         corr_gate_threshold=s2_params.get(
             "corr_gate_threshold", CORRELATION_GATE_THRESHOLD
         ),
+        tier_multipliers=tier_multipliers,
     )
     portfolio_result = sim.run()
 
@@ -321,16 +344,18 @@ def run_stage1_all_pairs(
     max_workers: int | None = None,
     output_dir: Path | None = None,
     n_jobs: int | None = None,
+    adaptive_trials: bool = True,
 ) -> dict[str, dict[str, Any]]:
     """Run Stage 1 for all pairs in parallel.
 
     Args:
         symbols: List of trading pair symbols.
         all_data: Dict of {symbol: {timeframe: DataFrame}}.
-        n_trials: Number of Optuna trials per pair.
+        n_trials: Base number of Optuna trials per pair.
         max_workers: Max parallel workers (default: auto from CPU count).
         output_dir: Directory for progress/result files (None = no file output).
         n_jobs: Parallel trial threads per pair (default: auto from CPU count).
+        adaptive_trials: Scale trials by data length (default: True).
 
     Returns:
         Dict of {symbol: stage1_result_dict}.
@@ -349,14 +374,19 @@ def run_stage1_all_pairs(
     results: dict[str, dict[str, Any]] = {}
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(
-                run_stage1_pair, symbol, all_data[symbol], n_trials,
+        futures = {}
+        for symbol in symbols:
+            if adaptive_trials:
+                n_bars = len(all_data[symbol][BASE_TF])
+                pair_trials = compute_trials(n_bars, n_trials)
+            else:
+                pair_trials = n_trials
+            future = executor.submit(
+                run_stage1_pair, symbol, all_data[symbol], pair_trials,
                 output_dir=output_dir,
                 n_jobs=jobs_per_pair,
-            ): symbol
-            for symbol in symbols
-        }
+            )
+            futures[future] = symbol
         for future in as_completed(futures):
             symbol = futures[future]
             try:
@@ -433,18 +463,47 @@ def run_pipeline(
     btc_params = pair_params.get("BTC/USDT")
     pair_signals = precompute_all_signals(all_data, pair_params, btc_params)
 
-    # ── 4. Stage 2: portfolio optimization ──
+    # ── 4. Per-pair evaluation for tier assignment ──
+    per_pair_metrics = run_per_pair_evaluation(
+        all_data, pair_signals, pair_params, output_dir,
+    )
+    tier_assignments = assign_tiers(per_pair_metrics)
+    tier_multipliers = {
+        sym: info["multiplier"] for sym, info in tier_assignments.items()
+    }
+
+    for sym, info in sorted(
+        tier_assignments.items(), key=lambda x: x[1]["sharpe"], reverse=True,
+    ):
+        logger.info(
+            "Tier %s: %s (Sharpe %.2f, mult %.2f)",
+            info["tier"], sym, info["sharpe"], info["multiplier"],
+        )
+    active_count = sum(
+        1 for t in tier_assignments.values() if t["tier"] != "X"
+    )
+    excluded_count = sum(
+        1 for t in tier_assignments.values() if t["tier"] == "X"
+    )
+    logger.info(
+        "Tiers: %d active, %d excluded (Tier X)", active_count, excluded_count,
+    )
+
+    # ── 5. Stage 2: portfolio optimization ──
     stage2_result = run_stage2(
         all_data, pair_signals, pair_params, stage2_trials,
+        tier_multipliers=tier_multipliers,
     )
     save_json(output_dir / "stage2_result.json", stage2_result)
 
-    # ── 5. Final evaluation ──
+    # ── 6. Final evaluation ──
     eval_result = run_final_evaluation(
         all_data, pair_signals, pair_params, stage2_result, output_dir,
+        per_pair_metrics=per_pair_metrics,
+        tier_multipliers=tier_multipliers,
     )
 
-    # ── 6. Save combined results ──
+    # ── 7. Save combined results ──
     combined: dict[str, Any] = {
         "symbols": symbols,
         "stage1_trials": stage1_trials,
@@ -454,10 +513,11 @@ def run_pipeline(
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "stage1_results": stage1_results,
         "stage2_results": stage2_result,
+        "tier_assignments": tier_assignments,
     }
     save_json(output_dir / "pipeline_result.json", combined)
 
-    # ── 7. Analyze + Report ──
+    # ── 8. Analyze + Report ──
     analysis = analyze_run(combined, eval_result)
     print_report(analysis, combined, eval_result)
     save_markdown_report(

@@ -45,6 +45,7 @@ def build_portfolio_objective(
     pair_data: dict[str, dict[str, pd.DataFrame]],
     pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     pair_params: dict[str, dict[str, Any]],
+    tier_multipliers: dict[str, float] | None = None,
 ) -> Callable:
     """Build multi-objective function for Stage 2.
 
@@ -90,6 +91,7 @@ def build_portfolio_objective(
             starting_equity=STARTING_EQUITY,
             corr_matrix=corr_matrix,
             corr_gate_threshold=corr_gate_threshold,
+            tier_multipliers=tier_multipliers,
         )
         result = sim.run()
 
@@ -163,6 +165,7 @@ def run_stage2(
     pair_params: dict[str, dict[str, Any]],
     n_trials: int = DEFAULT_TRIALS_STAGE2,
     seed: int = 42,
+    tier_multipliers: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Run Stage 2 portfolio optimization with NSGA-II.
 
@@ -172,6 +175,7 @@ def run_stage2(
         pair_params: Dict of {symbol: {param_name: value}} per pair (from Stage 1).
         n_trials: Number of NSGA-II trials.
         seed: Random seed for reproducibility.
+        tier_multipliers: Tier-based position sizing multipliers per symbol.
 
     Returns:
         Dict with portfolio_params, objectives, n_trials, pareto_front_size.
@@ -181,7 +185,10 @@ def run_stage2(
         len(pair_data), n_trials,
     )
 
-    objective = build_portfolio_objective(pair_data, pair_signals, pair_params)
+    objective = build_portfolio_objective(
+        pair_data, pair_signals, pair_params,
+        tier_multipliers=tier_multipliers,
+    )
 
     sampler = optuna.samplers.NSGAIISampler(
         population_size=min(50, n_trials),
