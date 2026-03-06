@@ -440,7 +440,7 @@ MONTE_CARLO_MIN_TRADES = 20
 # ─── DATA-ADAPTIVE TRIALS ──────────────────────────────────────────────────
 
 TRIALS_LONG_THRESHOLD_HOURS = 43800   # >= 5yr → full trials
-TRIALS_MEDIUM_THRESHOLD_HOURS = 26280  # >= 3yr → 70% trials
+TRIALS_MEDIUM_THRESHOLD_HOURS = 26000  # >= ~3yr → 70% trials
 TRIALS_RATIO_MEDIUM = 0.7
 TRIALS_RATIO_SHORT = 0.4
 
