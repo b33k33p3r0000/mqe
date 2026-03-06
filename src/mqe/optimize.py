@@ -40,6 +40,8 @@ from mqe.config import (
     MIN_WARMUP_BARS,
     STARTING_EQUITY,
     SYMBOLS,
+    TIER_MULTIPLIERS,
+    TIER_THRESHOLDS,
 )
 from mqe.core.backtest import simulate_trades_fast
 from mqe.core.metrics import MetricsResult, calculate_metrics
@@ -91,6 +93,36 @@ def _metrics_to_dict(m: MetricsResult) -> dict[str, Any]:
         elif isinstance(v, np.ndarray):
             d[k] = v.tolist()
     return d
+
+
+def assign_tiers(
+    per_pair_metrics: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Assign quality tiers based on evaluation Sharpe.
+
+    Args:
+        per_pair_metrics: {symbol: {sharpe_ratio_equity_based: float, ...}}
+
+    Returns:
+        {symbol: {"tier": "A"/"B"/"C"/"X", "multiplier": float, "sharpe": float}}
+    """
+    tiers: dict[str, dict[str, Any]] = {}
+    for symbol, metrics in per_pair_metrics.items():
+        sharpe = metrics.get("sharpe_ratio_equity_based", 0.0)
+        if sharpe >= TIER_THRESHOLDS["A"]:
+            tier = "A"
+        elif sharpe >= TIER_THRESHOLDS["B"]:
+            tier = "B"
+        elif sharpe >= TIER_THRESHOLDS["C"]:
+            tier = "C"
+        else:
+            tier = "X"
+        tiers[symbol] = {
+            "tier": tier,
+            "multiplier": TIER_MULTIPLIERS[tier],
+            "sharpe": sharpe,
+        }
+    return tiers
 
 
 def run_final_evaluation(

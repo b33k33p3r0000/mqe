@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from mqe.optimize import compute_parallelism
+from mqe.optimize import assign_tiers, compute_parallelism
 
 
 class TestComputeParallelism:
@@ -91,3 +91,45 @@ class TestComputeParallelism:
         # usable = 29, max_workers = min(15, 29//2) = 14, n_jobs = 29//14 = 2
         assert workers == 14
         assert jobs == 2
+
+
+class TestAssignTiers:
+    """Tests for auto quality tiering based on eval Sharpe."""
+
+    def test_assign_tiers_basic(self):
+        per_pair_metrics = {
+            "BTC/USDT": {"sharpe_ratio_equity_based": 1.8},
+            "ETH/USDT": {"sharpe_ratio_equity_based": 1.0},
+            "SOL/USDT": {"sharpe_ratio_equity_based": 0.3},
+            "ARB/USDT": {"sharpe_ratio_equity_based": -0.5},
+        }
+        tiers = assign_tiers(per_pair_metrics)
+        assert tiers["BTC/USDT"]["tier"] == "A"
+        assert tiers["BTC/USDT"]["multiplier"] == 1.0
+        assert tiers["ETH/USDT"]["tier"] == "B"
+        assert tiers["ETH/USDT"]["multiplier"] == 0.6
+        assert tiers["SOL/USDT"]["tier"] == "C"
+        assert tiers["SOL/USDT"]["multiplier"] == 0.25
+        assert tiers["ARB/USDT"]["tier"] == "X"
+        assert tiers["ARB/USDT"]["multiplier"] == 0.0
+
+    def test_assign_tiers_boundary_a(self):
+        metrics = {"SYM": {"sharpe_ratio_equity_based": 1.5}}
+        tiers = assign_tiers(metrics)
+        assert tiers["SYM"]["tier"] == "A"
+
+    def test_assign_tiers_boundary_b(self):
+        metrics = {"SYM": {"sharpe_ratio_equity_based": 0.5}}
+        tiers = assign_tiers(metrics)
+        assert tiers["SYM"]["tier"] == "B"
+
+    def test_assign_tiers_boundary_c(self):
+        metrics = {"SYM": {"sharpe_ratio_equity_based": 0.0}}
+        tiers = assign_tiers(metrics)
+        assert tiers["SYM"]["tier"] == "C"
+
+    def test_assign_tiers_negative_is_x(self):
+        metrics = {"SYM": {"sharpe_ratio_equity_based": -0.01}}
+        tiers = assign_tiers(metrics)
+        assert tiers["SYM"]["tier"] == "X"
+        assert tiers["SYM"]["multiplier"] == 0.0
