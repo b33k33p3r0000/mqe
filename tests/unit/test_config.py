@@ -125,3 +125,42 @@ class TestTierSearchSpace:
         s_hold_hi = TIER_SEARCH_SPACE["S"]["max_hold_bars"][1]
         b_hold_hi = TIER_SEARCH_SPACE["B"]["max_hold_bars"][1]
         assert b_hold_hi < s_hold_hi
+
+
+# ── Tier config tests ──
+
+def test_tier_thresholds_defined():
+    from mqe.config import TIER_THRESHOLDS
+    assert TIER_THRESHOLDS == {"A": 1.5, "B": 0.5, "C": 0.0}
+
+
+def test_tier_multipliers_defined():
+    from mqe.config import TIER_MULTIPLIERS
+    assert TIER_MULTIPLIERS == {"A": 1.0, "B": 0.6, "C": 0.25, "X": 0.0}
+
+
+def test_tier_multipliers_range():
+    from mqe.config import TIER_MULTIPLIERS
+    for tier, mult in TIER_MULTIPLIERS.items():
+        assert 0.0 <= mult <= 1.0, f"Tier {tier} multiplier {mult} out of range"
+
+
+def test_awf_splits_long_defined():
+    from mqe.config import ANCHORED_WF_SPLITS_LONG
+    assert len(ANCHORED_WF_SPLITS_LONG) == 5
+    assert ANCHORED_WF_SPLITS_LONG[0]["train_end"] == 0.50
+    assert ANCHORED_WF_SPLITS_LONG[-1]["test_end"] == 1.00
+
+
+def test_awf_long_threshold_defined():
+    from mqe.config import ANCHORED_WF_LONG_THRESHOLD_HOURS
+    assert ANCHORED_WF_LONG_THRESHOLD_HOURS == 26280
+
+
+def test_trial_thresholds_defined():
+    from mqe.config import TRIALS_LONG_THRESHOLD_HOURS, TRIALS_MEDIUM_THRESHOLD_HOURS
+    from mqe.config import TRIALS_RATIO_MEDIUM, TRIALS_RATIO_SHORT
+    assert TRIALS_LONG_THRESHOLD_HOURS == 43800
+    assert TRIALS_MEDIUM_THRESHOLD_HOURS == 26280
+    assert TRIALS_RATIO_MEDIUM == 0.7
+    assert TRIALS_RATIO_SHORT == 0.4

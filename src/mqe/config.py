@@ -372,6 +372,13 @@ ENABLE_PRUNING = True
 MONTE_CARLO_SIMULATIONS = 1000
 MONTE_CARLO_MIN_TRADES = 20
 
+# ─── DATA-ADAPTIVE TRIALS ──────────────────────────────────────────────────
+
+TRIALS_LONG_THRESHOLD_HOURS = 43800   # >= 5yr → full trials
+TRIALS_MEDIUM_THRESHOLD_HOURS = 26280  # >= 3yr → 70% trials
+TRIALS_RATIO_MEDIUM = 0.7
+TRIALS_RATIO_SHORT = 0.4
+
 # ─── ANCHORED WALK-FORWARD ──────────────────────────────────────────────────
 
 ANCHORED_WF_MIN_DATA_HOURS = 4000
@@ -385,6 +392,16 @@ ANCHORED_WF_SPLITS = [
 ANCHORED_WF_SPLITS_SHORT = [
     {"train_end": 0.70, "test_end": 0.85},
     {"train_end": 0.85, "test_end": 1.00},
+]
+
+ANCHORED_WF_LONG_THRESHOLD_HOURS = 26280  # >= 3yr → 5 splits
+
+ANCHORED_WF_SPLITS_LONG = [
+    {"train_end": 0.50, "test_end": 0.60},
+    {"train_end": 0.60, "test_end": 0.70},
+    {"train_end": 0.70, "test_end": 0.80},
+    {"train_end": 0.80, "test_end": 0.90},
+    {"train_end": 0.90, "test_end": 1.00},
 ]
 
 # ─── DATA FETCHING ──────────────────────────────────────────────────────────
@@ -418,6 +435,11 @@ SIGNAL_STRENGTH_GATED = 1.5
 CORRELATION_HAIRCUT_FACTOR = 0.90  # 10% size reduction per correlated open pair
 POSITION_MIN_PCT = 0.05
 POSITION_MAX_PCT = 0.20
+
+# ─── TIER SYSTEM ───────────────────────────────────────────────────────────
+
+TIER_THRESHOLDS = {"A": 1.5, "B": 0.5, "C": 0.0}  # eval Sharpe (equity) boundaries
+TIER_MULTIPLIERS = {"A": 1.0, "B": 0.6, "C": 0.25, "X": 0.0}  # sizing + ranking multiplier
 
 # ─── DISCORD ────────────────────────────────────────────────────────────────
 
