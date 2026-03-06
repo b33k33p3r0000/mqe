@@ -1,5 +1,7 @@
 """Unit tests for position sizing."""
 
+import pytest
+
 from mqe.risk.sizing import compute_position_size
 from mqe.config import PAIR_PROFILES, OI_MC_DANGER_THRESHOLD
 
@@ -48,3 +50,39 @@ class TestPositionSizing:
             "BTC/USDT", [], 100000, {"BTC/USDT": 0.001}, {}
         )
         assert 5000 <= size <= 20000  # 5-20% of 100k
+
+
+def test_tier_multiplier_reduces_size():
+    base_size = compute_position_size(
+        "BTC/USDT", [], 100_000.0,
+        {"BTC/USDT": 0.02}, {},
+        tier_multiplier=1.0,
+    )
+    reduced_size = compute_position_size(
+        "BTC/USDT", [], 100_000.0,
+        {"BTC/USDT": 0.02}, {},
+        tier_multiplier=0.6,
+    )
+    assert reduced_size == pytest.approx(base_size * 0.6, rel=0.01)
+
+
+def test_tier_multiplier_zero_returns_zero():
+    size = compute_position_size(
+        "BTC/USDT", [], 100_000.0,
+        {"BTC/USDT": 0.02}, {},
+        tier_multiplier=0.0,
+    )
+    assert size == 0.0
+
+
+def test_tier_multiplier_default_is_one():
+    size_default = compute_position_size(
+        "BTC/USDT", [], 100_000.0,
+        {"BTC/USDT": 0.02}, {},
+    )
+    size_explicit = compute_position_size(
+        "BTC/USDT", [], 100_000.0,
+        {"BTC/USDT": 0.02}, {},
+        tier_multiplier=1.0,
+    )
+    assert size_default == size_explicit

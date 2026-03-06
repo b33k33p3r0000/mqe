@@ -29,6 +29,7 @@ def compute_position_size(
     equity: float,
     atr_dict: dict[str, float],
     corr_dict: dict[str, dict[str, float]],
+    tier_multiplier: float = 1.0,
 ) -> float:
     """
     Compute position size for a symbol.
@@ -73,4 +74,7 @@ def compute_position_size(
     size = equity * weight
     min_size = equity * POSITION_MIN_PCT
     max_size = equity * POSITION_MAX_PCT
-    return max(min_size, min(size, max_size))
+    clipped = max(min_size, min(size, max_size))
+
+    # Step 6: Apply tier multiplier
+    return clipped * tier_multiplier
