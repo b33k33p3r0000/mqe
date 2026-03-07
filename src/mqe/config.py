@@ -321,7 +321,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (15.0, 30.0),
         "trail_mult": (2.0, 4.0),
-        "hard_stop_mult": (1.5, 3.0),
+        "hard_stop_mult": (1.5, 4.0),
         "max_hold_bars": (48, 168),
     },
     "A+": {
@@ -335,7 +335,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (15.0, 30.0),
         "trail_mult": (2.0, 4.0),
-        "hard_stop_mult": (1.5, 2.8),
+        "hard_stop_mult": (1.5, 3.5),
         "max_hold_bars": (36, 144),
     },
     "A": {
@@ -349,7 +349,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (15.0, 30.0),
         "trail_mult": (2.0, 3.8),
-        "hard_stop_mult": (1.5, 2.8),
+        "hard_stop_mult": (1.5, 3.5),
         "max_hold_bars": (36, 144),
     },
     "A-": {
@@ -363,7 +363,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (18.0, 30.0),
         "trail_mult": (2.0, 3.5),
-        "hard_stop_mult": (1.5, 2.5),
+        "hard_stop_mult": (1.5, 3.0),
         "max_hold_bars": (24, 120),
     },
     "B+": {
@@ -377,7 +377,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (18.0, 30.0),
         "trail_mult": (2.0, 3.5),
-        "hard_stop_mult": (1.5, 2.5),
+        "hard_stop_mult": (1.5, 3.0),
         "max_hold_bars": (24, 120),
     },
     "B": {
@@ -391,7 +391,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (20.0, 30.0),
         "trail_mult": (2.0, 3.5),
-        "hard_stop_mult": (1.5, 2.5),
+        "hard_stop_mult": (1.5, 3.0),
         "max_hold_bars": (24, 96),
     },
     "B-": {
@@ -405,7 +405,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (20.0, 30.0),
         "trail_mult": (2.0, 3.0),
-        "hard_stop_mult": (1.5, 2.5),
+        "hard_stop_mult": (1.5, 3.0),
         "max_hold_bars": (24, 96),
     },
 }

@@ -157,6 +157,18 @@ def test_awf_long_threshold_defined():
     assert ANCHORED_WF_LONG_THRESHOLD_HOURS == 26280
 
 
+def test_hard_stop_mult_expanded_ranges():
+    """hard_stop_mult upper bounds are expanded by ~1.0."""
+    from mqe.config import TIER_SEARCH_SPACE
+    assert TIER_SEARCH_SPACE["S"]["hard_stop_mult"][1] == 4.0
+    assert TIER_SEARCH_SPACE["A+"]["hard_stop_mult"][1] == 3.5
+    assert TIER_SEARCH_SPACE["A"]["hard_stop_mult"][1] == 3.5
+    assert TIER_SEARCH_SPACE["A-"]["hard_stop_mult"][1] == 3.0
+    assert TIER_SEARCH_SPACE["B+"]["hard_stop_mult"][1] == 3.0
+    assert TIER_SEARCH_SPACE["B"]["hard_stop_mult"][1] == 3.0
+    assert TIER_SEARCH_SPACE["B-"]["hard_stop_mult"][1] == 3.0
+
+
 def test_trial_thresholds_defined():
     from mqe.config import (
         TRIALS_LONG_THRESHOLD_HOURS,
