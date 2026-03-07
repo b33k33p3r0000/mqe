@@ -469,6 +469,20 @@ ANCHORED_WF_SPLITS_LONG = [
     {"train_end": 0.90, "test_end": 1.00},
 ]
 
+# ─── WALK-FORWARD EVALUATION ──────────────────────────────────────────────
+
+WF_EVAL_CEILING_LONG = 0.70       # S1 trains on first 70% (>= 3yr data)
+WF_EVAL_CEILING_MEDIUM = 0.75     # 75% (1.5-3yr data)
+WF_EVAL_CEILING_SHORT = 0.80      # 80% (< 1.5yr data)
+WF_EVAL_N_WINDOWS_LONG = 3        # 3 eval windows for long data
+WF_EVAL_N_WINDOWS_MEDIUM = 2      # 2 for medium
+WF_EVAL_N_WINDOWS_SHORT = 1       # 1 for short (single holdout)
+
+# Enhanced tiering thresholds
+TIER_DEGRADATION_A = 0.5          # min S1/OOS ratio for A tier
+TIER_DEGRADATION_B = 0.3          # min S1/OOS ratio for B tier
+TIER_CONSISTENCY_A = 1.5          # max Sharpe std for A tier
+
 # ─── DATA FETCHING ──────────────────────────────────────────────────────────
 
 OHLCV_LIMIT_PER_CALL = 1500
