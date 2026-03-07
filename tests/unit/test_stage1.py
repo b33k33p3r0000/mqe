@@ -367,3 +367,22 @@ class TestAwfSplitsCount:
         splits = compute_awf_splits(8000)
         assert splits is not None
         assert len(splits) == 2
+
+
+# ─── AWF splits with ceiling ──────────────────────────────────────────────
+
+
+class TestAwfSplitsCeiling:
+    def test_awf_splits_respect_ceiling(self):
+        """AWF splits must stay within ceiling fraction."""
+        splits = compute_awf_splits(30000, ceiling=0.70)
+        assert splits is not None
+        for s in splits:
+            assert s["train_end"] <= 0.70
+            assert s["test_end"] <= 0.70
+
+    def test_awf_splits_default_ceiling_unchanged(self):
+        """Without ceiling, splits go to 1.0 as before."""
+        splits = compute_awf_splits(30000)
+        assert splits is not None
+        assert splits[-1]["test_end"] == 1.0 or splits[-1]["test_end"] > 0.90

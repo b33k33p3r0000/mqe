@@ -88,8 +88,15 @@ def compute_awf_splits(
     total_hours: int,
     n_splits: int | None = None,
     test_size: float = 0.20,
+    ceiling: float = 1.0,
 ) -> list[dict[str, float]] | None:
     """Compute Anchored Walk-Forward splits based on data length.
+
+    Args:
+        total_hours: Total data length in hours.
+        n_splits: Custom number of AWF splits (None = auto from data length).
+        test_size: Test window fraction.
+        ceiling: Maximum data fraction S1 can use (1.0 = all, 0.7 = first 70%).
 
     Returns None if data is too short.
     """
@@ -98,8 +105,42 @@ def compute_awf_splits(
 
     purge_frac = PURGE_GAP_BARS / total_hours  # gap as fraction of total data
 
-    if n_splits is not None and n_splits >= 2:
+    if ceiling < 1.0:
+        # Dynamic splits within ceiling
+        effective_hours = int(total_hours * ceiling)
+        if effective_hours < ANCHORED_WF_MIN_DATA_HOURS:
+            return None
+        # Determine split count from effective data length
+        if effective_hours >= ANCHORED_WF_LONG_THRESHOLD_HOURS:
+            n_auto = 5
+        elif effective_hours >= ANCHORED_WF_SHORT_THRESHOLD_HOURS:
+            n_auto = 3
+        else:
+            n_auto = 2
+        train_start_frac = ceiling * 0.50  # scale anchor proportionally
+        test_frac = test_size * ceiling
+        available = ceiling - train_start_frac - test_frac - purge_frac
+        if available <= 0:
+            available = ceiling - train_start_frac - purge_frac
+        train_step = max(available / n_auto, 0.05)
         splits: list[dict[str, float]] = []
+        for i in range(n_auto):
+            train_end = train_start_frac + (i + 1) * train_step
+            if train_end > ceiling:
+                break
+            test_start = train_end + purge_frac
+            test_end = min(test_start + test_frac, ceiling)
+            if test_end <= test_start:
+                break
+            splits.append({
+                "train_end": round(train_end, 4),
+                "test_start": round(test_start, 4),
+                "test_end": round(test_end, 4),
+            })
+        return splits if splits else None
+
+    if n_splits is not None and n_splits >= 2:
+        splits = []
         train_start = 0.50
         available = 1.0 - train_start - test_size - purge_frac
         train_step = available / n_splits
