@@ -158,15 +158,15 @@ def test_awf_long_threshold_defined():
 
 
 def test_hard_stop_mult_expanded_ranges():
-    """hard_stop_mult upper bounds are expanded by ~1.0."""
+    """hard_stop_mult upper bounds tighter for volatile tiers."""
     from mqe.config import TIER_SEARCH_SPACE
     assert TIER_SEARCH_SPACE["S"]["hard_stop_mult"][1] == 4.0
     assert TIER_SEARCH_SPACE["A+"]["hard_stop_mult"][1] == 3.5
-    assert TIER_SEARCH_SPACE["A"]["hard_stop_mult"][1] == 3.5
-    assert TIER_SEARCH_SPACE["A-"]["hard_stop_mult"][1] == 3.0
-    assert TIER_SEARCH_SPACE["B+"]["hard_stop_mult"][1] == 3.0
-    assert TIER_SEARCH_SPACE["B"]["hard_stop_mult"][1] == 3.0
-    assert TIER_SEARCH_SPACE["B-"]["hard_stop_mult"][1] == 3.0
+    assert TIER_SEARCH_SPACE["A"]["hard_stop_mult"][1] == 3.0
+    assert TIER_SEARCH_SPACE["A-"]["hard_stop_mult"][1] == 2.5
+    assert TIER_SEARCH_SPACE["B+"]["hard_stop_mult"][1] == 2.5
+    assert TIER_SEARCH_SPACE["B"]["hard_stop_mult"][1] == 2.5
+    assert TIER_SEARCH_SPACE["B-"]["hard_stop_mult"][1] == 2.0
 
 
 def test_trial_thresholds_defined():
@@ -177,8 +177,8 @@ def test_trial_thresholds_defined():
         TRIALS_MEDIUM,
         TRIALS_SHORT,
     )
-    assert TRIALS_LONG_THRESHOLD_HOURS == 43800
-    assert TRIALS_MEDIUM_THRESHOLD_HOURS == 26000
+    assert TRIALS_LONG_THRESHOLD_HOURS == 39420
+    assert TRIALS_MEDIUM_THRESHOLD_HOURS == 21900
     assert TRIALS_LONG == 65_000
     assert TRIALS_MEDIUM == 50_000
     assert TRIALS_SHORT == 35_000

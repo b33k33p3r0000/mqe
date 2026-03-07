@@ -140,22 +140,34 @@ def assign_tiers_enhanced(
         TIER_DEGRADATION_A,
         TIER_DEGRADATION_B,
         TIER_CONSISTENCY_A,
+        TIER_WORST_WINDOW_A,
+        TIER_WORST_WINDOW_B,
+        TIER_WORST_WINDOW_C,
     )
     tiers: dict[str, dict[str, Any]] = {}
     for symbol, wf in wf_metrics.items():
         median_sharpe = wf.get("wf_sharpe_median", 0.0)
         consistency = wf.get("wf_sharpe_std", 0.0)
         degradation = wf.get("degradation_ratio", 0.0)
+        worst_sharpe = wf.get("wf_worst_sharpe", 0.0)
 
         if (
             median_sharpe >= TIER_THRESHOLDS["A"]
             and degradation >= TIER_DEGRADATION_A
             and consistency < TIER_CONSISTENCY_A
+            and worst_sharpe >= TIER_WORST_WINDOW_A
         ):
             tier = "A"
-        elif median_sharpe >= TIER_THRESHOLDS["B"] and degradation >= TIER_DEGRADATION_B:
+        elif (
+            median_sharpe >= TIER_THRESHOLDS["B"]
+            and degradation >= TIER_DEGRADATION_B
+            and worst_sharpe >= TIER_WORST_WINDOW_B
+        ):
             tier = "B"
-        elif median_sharpe >= TIER_THRESHOLDS["C"]:
+        elif (
+            median_sharpe >= TIER_THRESHOLDS["C"]
+            and worst_sharpe >= TIER_WORST_WINDOW_C
+        ):
             tier = "C"
         else:
             tier = "X"
@@ -166,6 +178,7 @@ def assign_tiers_enhanced(
             "sharpe": median_sharpe,
             "degradation": degradation,
             "consistency": consistency,
+            "worst_sharpe": worst_sharpe,
         }
     return tiers
 
@@ -555,7 +568,7 @@ def run_pipeline(
     symbols: list[str] | None = None,
     stage1_trials: int = TRIALS_LONG,
     stage2_trials: int = DEFAULT_TRIALS_STAGE2,
-    hours: int = 8760,
+    hours: int = 26280,
     output_dir: Path | None = None,
     tag: str = "",
     max_workers: int | None = None,
@@ -869,7 +882,7 @@ def main() -> None:
     parser.add_argument("--symbols", nargs="+", default=SYMBOLS)
     parser.add_argument("--s1-trials", type=int, default=TRIALS_LONG)
     parser.add_argument("--s2-trials", type=int, default=DEFAULT_TRIALS_STAGE2)
-    parser.add_argument("--hours", type=int, default=8760)
+    parser.add_argument("--hours", type=int, default=26280)
     parser.add_argument("--tag", type=str, default="")
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument(

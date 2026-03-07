@@ -124,27 +124,26 @@ uv run pytest tests/ -q
 # CLI with specific args
 uv run python -m mqe.optimize \
   --symbols BTC/USDT ETH/USDT SOL/USDT \
-  --s1-trials 10000 --s2-trials 5000 \
-  --hours 8760 --tag prod-v1
+  --s2-trials 5000 --hours 26280 --tag prod-v1
 
 # Background with tag
-./run.sh --s1-trials 5000 --s2-trials 2000 --tag my-run
+./run.sh --s2-trials 2000 --tag my-run
 
 # Foreground mode
-./run.sh --s1-trials 1000 --s2-trials 500 --fg
+./run.sh --s2-trials 500 --fg
 ```
 
 ### run.sh Presets (interactive menu)
 
 | Preset | S1 Trials | S2 Trials | Pairs | Purpose |
 |--------|-----------|-----------|-------|---------|
-| Test | 1,000 | 500 | 3 (core) | Smoke test |
-| Quick | 5,000 | 2,000 | 3 (core) | Quick iteration |
-| Main | 10,000 | 5,000 | 3 (core) | Production run |
-| Full | 10,000 | 5,000 | 15 (all) | Full search across all clusters |
-| Custom | user input | user input | user input | Manual override |
+| Test | adaptive | 500 | 3 (core) | Smoke test |
+| Standard | adaptive | 5,000 | 15 (all) | Normal run |
+| Full | adaptive | 10,000 | 15 (all) | Max quality |
+| Custom | adaptive | user input | user input | Manual override |
 
-All presets use `--hours 8760` (~1yr) by default. All runs start in background by default (`--fg` for foreground).
+S1 trials are **data-adaptive**: <2.5yr = 35k, >=2.5yr = 50k, >=4.5yr = 65k trials per pair.
+All presets use `--hours 26280` (~3yr) by default. All runs start in background by default (`--fg` for foreground).
 
 ### Process Management
 
@@ -174,7 +173,7 @@ All config in `src/mqe/config.py`. Key constants:
 | `STARTING_EQUITY` | $100,000 | Backtest starting capital |
 | `BACKTEST_POSITION_PCT` | 20% | Per-pair position size (Stage 1) |
 | `FEE` | 0.06% (6 bps) | Trading fee per side (Binance VIP0 taker + buffer) |
-| `DEFAULT_TRIALS_STAGE1` | 10,000 | Optuna trials per pair |
+| `TRIALS_SHORT/MEDIUM/LONG` | 35k/50k/65k | Adaptive S1 trials (<2.5yr/>=2.5yr/>=4.5yr) |
 | `DEFAULT_TRIALS_STAGE2` | 10,000 | NSGA-II trials |
 | `MIN_TRADES_YEAR_HARD` | 60 | Minimum trades/year constraint |
 | `MIN_TRADES_TEST_HARD` | 5 | Minimum trades in test set |

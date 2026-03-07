@@ -96,3 +96,14 @@ Full MQE (Multi-pair Quant Engine) implementation from scratch — 18 TDD tasks,
 - R3: cluster_max range 1-4 — vyžaduje nový run pro ověření
 - S2: Dynamický B-tier threshold — nízká priorita, post-eval gate řeší akutní problém
 - S3: Weighted Pareto front selection — exploratory, vyžaduje research
+
+## 2026-03-07 — Adaptive trials fix + run.sh cleanup
+
+**Problem:** S1 trials byly 35k pro BTC/ETH/SOL i přesto, že dataset má 5-8yr dat. Root cause: `--hours` default 8760 (1yr) → `compute_trials()` dostala ~8.7k barů → SHORT tier.
+
+**Fix:**
+- `config.py`: Thresholds přeladěny — `TRIALS_LONG_THRESHOLD` 43800→39420 (4.5yr), `MEDIUM` 26000→21900 (2.5yr)
+- `optimize.py`: Default `--hours` 8760→26280 (~3yr) aby odpovídal run.sh
+- `run.sh`: Odstraněn `--s1-trials` z CLI, presetů, banneru. S1 trials plně automatické přes `compute_trials()`.
+
+**Tiers:** <2.5yr = 35k, >=2.5yr = 50k, >=4.5yr = 65k trials per pair.

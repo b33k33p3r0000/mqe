@@ -343,10 +343,10 @@ class TestComputeTrials:
         assert compute_trials(20000) == 35_000
 
     def test_compute_trials_boundary_long(self):
-        assert compute_trials(43800) == 65_000
+        assert compute_trials(39420) == 65_000
 
     def test_compute_trials_boundary_medium(self):
-        assert compute_trials(26000) == 50_000
+        assert compute_trials(21900) == 50_000
 
 
 # ─── AWF splits count by data length ──────────────────────────────────────

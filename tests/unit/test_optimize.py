@@ -157,7 +157,7 @@ class TestAssignTiersEnhanced:
     def test_good_pair_gets_a(self):
         from mqe.optimize import assign_tiers_enhanced
         wf_metrics = {
-            "GOOD/USDT": {"wf_sharpe_median": 2.5, "wf_sharpe_std": 0.3, "degradation_ratio": 0.8},
+            "GOOD/USDT": {"wf_sharpe_median": 2.5, "wf_sharpe_std": 0.3, "degradation_ratio": 0.8, "wf_worst_sharpe": 1.0},
         }
         tiers = assign_tiers_enhanced(wf_metrics)
         assert tiers["GOOD/USDT"]["tier"] == "A"

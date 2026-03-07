@@ -22,38 +22,38 @@ MQE Optimizer — Multi-pair Quant Engine
 ========================================
 
 Presets (interactive menu when no CLI args):
-  1) Test     —   2k S1 +   500 S2 trials, 15 pairs
-  2) Small    —  50k S1 +    5k S2 trials, 15 pairs
-  3) Full     — 100k S1 +   10k S2 trials, 15 pairs
-  4) Custom   — You choose everything
+  1) Test       —   500 S2,  3 core pairs (smoke test)
+  2) Standard   —    5k S2, 15 pairs (normal run)
+  3) Full       —   10k S2, 15 pairs (max quality)
+  4) Custom     — You choose everything
 
-All presets use --hours 26280 (~3yr) by default.
-All runs start in background by default (use --fg for foreground).
+S1 trials are data-adaptive (automatic per pair):
+  <2.5yr data = 35k | >=2.5yr = 50k | >=4.5yr = 65k
+
+Default: --hours 26280 (~3yr). Runs in background (--fg for foreground).
 
 Options:
-  --s1-trials N          Stage 1 trials per pair (default: 10000)
   --s2-trials N          Stage 2 portfolio trials (default: 5000)
-  --hours N              History length in hours (default: 8760)
-  --tag NAME             Run tag (e.g. 'test-v1')
+  --hours N              Data history in hours (default: 26280)
+  --tag NAME             Run tag (e.g. 'prod-v1')
   --workers N            Max parallel workers
   --symbols SYM1 SYM2    Override symbol list
-  --fg                   Run in foreground (default: background)
+  --fg                   Run in foreground
 
 Examples:
   ./run.sh                               # Interactive preset menu
-  ./run.sh --s1-trials 1000 --s2-trials 500 --fg   # Quick test, foreground
-  ./run.sh --tag main-run                # Background with tag
-  ./run.sh --symbols BTC/USDT SOL/USDT   # Specific pairs
+  ./run.sh --s2-trials 500 --fg          # Quick test, foreground
+  ./run.sh --tag prod-v1                 # Standard run with tag
+  ./run.sh --symbols BTC/USDT SOL/USDT   # Specific pairs only
 
 Process management:
   ./run.sh attach          Attach to running/latest log
   ./run.sh kill            Kill running MQE process
   ./run.sh logs            List recent log files
   ./run.sh monitor         Live dashboard for active run
-  ./run.sh monitor --once  Single snapshot of active run
+  ./run.sh monitor --once  Single snapshot
   ./run.sh resume          Resume latest incomplete run (Stage 2+)
   ./run.sh resume PATH     Resume specific run directory
-  ./run.sh resume --s2-trials 1000   Override S2 trial count
 
 EOF
 }
@@ -62,7 +62,6 @@ EOF
 # DEFAULTS
 # =============================================================================
 
-S1_TRIALS=""
 S2_TRIALS=""
 HOURS=""
 TAG=""
@@ -248,7 +247,6 @@ fi
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --s1-trials) S1_TRIALS="$2"; shift ;;
         --s2-trials) S2_TRIALS="$2"; shift ;;
         --hours) HOURS="$2"; shift ;;
         --tag) TAG="$2"; shift ;;
@@ -274,44 +272,39 @@ done
 # INTERACTIVE MENU (when no trials specified via CLI)
 # =============================================================================
 
-if [ -z "$S1_TRIALS" ] && [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
+if [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
     echo ""
     echo "MQE Optimizer — Preset Menu"
     echo "==========================="
     echo ""
-    echo "  1) Test    —    2k S1 +   500 S2, 15 pairs"
-    echo "  2) Small   —   50k S1 +    5k S2, 15 pairs"
-    echo "  3) Full    —  100k S1 +   10k S2, 15 pairs"
-    echo "  4) Custom  —  You choose everything"
+    echo "  1) Test      —   500 S2,  3 core pairs"
+    echo "  2) Standard  —    5k S2, 15 pairs"
+    echo "  3) Full      —   10k S2, 15 pairs"
+    echo "  4) Custom    —  You choose everything"
     echo ""
     read -p "Select preset (1-4): " choice
 
     case "$choice" in
         1)
             PRESET="test"
-            S1_TRIALS=2000
             S2_TRIALS=500
-            SYMBOLS_OVERRIDE="$ALL_PAIRS"
+            SYMBOLS_OVERRIDE="BTC/USDT ETH/USDT SOL/USDT"
             ;;
         2)
-            PRESET="small"
-            S1_TRIALS=50000
+            PRESET="standard"
             S2_TRIALS=5000
             SYMBOLS_OVERRIDE="$ALL_PAIRS"
             ;;
         3)
             PRESET="full"
-            S1_TRIALS=100000
             S2_TRIALS=10000
             SYMBOLS_OVERRIDE="$ALL_PAIRS"
             ;;
         4)
             PRESET="custom"
-            read -p "S1 trials per pair [50000]: " S1_TRIALS
-            S1_TRIALS="${S1_TRIALS:-50000}"
             read -p "S2 portfolio trials [5000]: " S2_TRIALS
             S2_TRIALS="${S2_TRIALS:-5000}"
-            read -p "Hours of data [8760]: " HOURS
+            read -p "Hours of data [26280]: " HOURS
             HOURS="${HOURS:-26280}"
             read -p "Max workers (empty=auto): " WORKERS
             WORKERS="${WORKERS:-}"
@@ -342,7 +335,6 @@ fi
 # APPLY DEFAULTS
 # =============================================================================
 
-S1_TRIALS="${S1_TRIALS:-10000}"
 S2_TRIALS="${S2_TRIALS:-5000}"
 HOURS="${HOURS:-26280}"
 
@@ -361,7 +353,6 @@ SYMBOL_COUNT=$(echo "$SYMBOLS_OVERRIDE" | wc -w | tr -d ' ')
 build_cmd() {
     local cmd="uv run python -m mqe.optimize"
     cmd="$cmd --symbols $SYMBOLS_OVERRIDE"
-    cmd="$cmd --s1-trials $S1_TRIALS"
     cmd="$cmd --s2-trials $S2_TRIALS"
     cmd="$cmd --hours $HOURS"
     if [ -n "$TAG" ]; then
@@ -387,7 +378,7 @@ echo "════════════════════════�
 echo "  MQE Optimizer — Multi-pair Quant Engine"
 echo "═══════════════════════════════════════════════════════"
 [ -n "$PRESET" ] && echo "  Preset:    $PRESET"
-echo "  S1 trials: $S1_TRIALS (per pair)"
+echo "  S1 trials: adaptive (<2.5yr=35k, >=2.5yr=50k, >=4.5yr=65k)"
 echo "  S2 trials: $S2_TRIALS (portfolio)"
 echo "  Hours:     $HOURS (~$((HOURS / 24)) days)"
 echo "  Symbols:   $SYMBOL_COUNT pairs"

@@ -349,7 +349,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_lookback": (1, 4),
         "adx_threshold": (15.0, 30.0),
         "trail_mult": (2.0, 3.8),
-        "hard_stop_mult": (1.5, 3.5),
+        "hard_stop_mult": (1.5, 3.0),
         "max_hold_bars": (36, 144),
     },
     "A-": {
@@ -362,8 +362,8 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_upper": (65, 75),
         "rsi_lookback": (1, 4),
         "adx_threshold": (18.0, 30.0),
-        "trail_mult": (2.0, 3.5),
-        "hard_stop_mult": (1.5, 3.0),
+        "trail_mult": (1.5, 3.0),
+        "hard_stop_mult": (1.5, 2.5),
         "max_hold_bars": (24, 120),
     },
     "B+": {
@@ -376,8 +376,8 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_upper": (65, 75),
         "rsi_lookback": (1, 4),
         "adx_threshold": (18.0, 30.0),
-        "trail_mult": (2.0, 3.5),
-        "hard_stop_mult": (1.5, 3.0),
+        "trail_mult": (1.5, 2.8),
+        "hard_stop_mult": (1.5, 2.5),
         "max_hold_bars": (24, 120),
     },
     "B": {
@@ -390,8 +390,8 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_upper": (65, 75),
         "rsi_lookback": (1, 4),
         "adx_threshold": (20.0, 30.0),
-        "trail_mult": (2.0, 3.5),
-        "hard_stop_mult": (1.5, 3.0),
+        "trail_mult": (1.5, 2.8),
+        "hard_stop_mult": (1.5, 2.5),
         "max_hold_bars": (24, 96),
     },
     "B-": {
@@ -404,8 +404,8 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "rsi_upper": (65, 75),
         "rsi_lookback": (1, 4),
         "adx_threshold": (20.0, 30.0),
-        "trail_mult": (2.0, 3.0),
-        "hard_stop_mult": (1.5, 3.0),
+        "trail_mult": (1.5, 2.5),
+        "hard_stop_mult": (1.5, 2.0),
         "max_hold_bars": (24, 96),
     },
 }
@@ -438,8 +438,8 @@ MONTE_CARLO_MIN_TRADES = 20
 
 # ─── DATA-ADAPTIVE TRIALS ──────────────────────────────────────────────────
 
-TRIALS_LONG_THRESHOLD_HOURS = 43800   # >= 5yr → full trials
-TRIALS_MEDIUM_THRESHOLD_HOURS = 26000  # >= ~3yr → medium trials
+TRIALS_LONG_THRESHOLD_HOURS = 39420   # >= 4.5yr → full trials
+TRIALS_MEDIUM_THRESHOLD_HOURS = 21900  # >= 2.5yr → medium trials
 TRIALS_LONG = 65_000
 TRIALS_MEDIUM = 50_000
 TRIALS_SHORT = 35_000
@@ -482,6 +482,9 @@ WF_EVAL_N_WINDOWS_SHORT = 1       # 1 for short (single holdout)
 TIER_DEGRADATION_A = 0.5          # min S1/OOS ratio for A tier
 TIER_DEGRADATION_B = 0.3          # min S1/OOS ratio for B tier
 TIER_CONSISTENCY_A = 1.5          # max Sharpe std for A tier
+TIER_WORST_WINDOW_A = 0.5         # min worst OOS window Sharpe for A tier
+TIER_WORST_WINDOW_B = -0.2        # min worst OOS window Sharpe for B tier
+TIER_WORST_WINDOW_C = -1.0        # min worst OOS window Sharpe for C tier
 
 # ─── DATA FETCHING ──────────────────────────────────────────────────────────
 
