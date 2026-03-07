@@ -169,6 +169,111 @@ def run_per_pair_evaluation(
     return per_pair_metrics
 
 
+def compute_wf_ceiling(n_bars: int) -> tuple[float, int]:
+    """Compute WF eval ceiling and window count based on data length."""
+    from mqe.config import (
+        ANCHORED_WF_LONG_THRESHOLD_HOURS,
+        ANCHORED_WF_SHORT_THRESHOLD_HOURS,
+        WF_EVAL_CEILING_LONG,
+        WF_EVAL_CEILING_MEDIUM,
+        WF_EVAL_CEILING_SHORT,
+        WF_EVAL_N_WINDOWS_LONG,
+        WF_EVAL_N_WINDOWS_MEDIUM,
+        WF_EVAL_N_WINDOWS_SHORT,
+    )
+    if n_bars >= ANCHORED_WF_LONG_THRESHOLD_HOURS:
+        return WF_EVAL_CEILING_LONG, WF_EVAL_N_WINDOWS_LONG
+    elif n_bars >= ANCHORED_WF_SHORT_THRESHOLD_HOURS:
+        return WF_EVAL_CEILING_MEDIUM, WF_EVAL_N_WINDOWS_MEDIUM
+    else:
+        return WF_EVAL_CEILING_SHORT, WF_EVAL_N_WINDOWS_SHORT
+
+
+def run_wf_evaluation(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+    pair_params: dict[str, dict[str, Any]],
+    s1_sharpes: dict[str, float],
+    output_dir: Path,
+) -> dict[str, dict[str, Any]]:
+    """Run walk-forward evaluation on OOS windows for each pair.
+
+    Evaluates S1-optimized params on data AFTER the S1 training ceiling.
+    Returns per-pair WF metrics: median Sharpe, std, worst Sharpe, degradation.
+    """
+    logger.info("WF evaluation: running OOS window backtests for tiering")
+    wf_metrics: dict[str, dict[str, Any]] = {}
+
+    for symbol in pair_signals:
+        data = all_data[symbol]
+        base_df = data[BASE_TF]
+        total_bars = len(base_df)
+        buy, sell, atr, _ = pair_signals[symbol]
+        params = pair_params.get(symbol, {})
+
+        ceiling, n_windows = compute_wf_ceiling(total_bars)
+        ceiling_bar = int(total_bars * ceiling)
+        remaining = total_bars - ceiling_bar
+        window_size = remaining // n_windows if n_windows > 0 else remaining
+
+        window_sharpes: list[float] = []
+
+        for w in range(n_windows):
+            w_start = ceiling_bar + w * window_size
+            w_end = ceiling_bar + (w + 1) * window_size if w < n_windows - 1 else total_bars
+
+            if w_end - w_start < 100:
+                continue
+
+            result = simulate_trades_fast(
+                symbol, data, buy, sell,
+                atr_values=atr,
+                start_idx=w_start,
+                end_idx=w_end,
+                allow_flip=bool(params.get("allow_flip", 0)),
+                hard_stop_mult=float(params.get("hard_stop_mult", 2.5)),
+                trail_mult=float(params.get("trail_mult", 3.0)),
+                max_hold_bars=int(params.get("max_hold_bars", 168)),
+            )
+
+            if not result.trades or len(result.trades) < 3:
+                window_sharpes.append(0.0)
+                continue
+
+            metrics = calculate_metrics(
+                result.trades, result.backtest_days, start_equity=STARTING_EQUITY,
+            )
+            window_sharpes.append(metrics.sharpe_ratio_equity_based)
+
+        if not window_sharpes:
+            window_sharpes = [0.0]
+
+        s1_sharpe = s1_sharpes.get(symbol, 1.0)
+        median_sharpe = float(np.median(window_sharpes))
+        degradation = median_sharpe / s1_sharpe if s1_sharpe > 0 else 0.0
+
+        wf_metrics[symbol] = {
+            "wf_sharpe_median": median_sharpe,
+            "wf_sharpe_std": float(np.std(window_sharpes)) if len(window_sharpes) > 1 else 0.0,
+            "wf_worst_sharpe": float(min(window_sharpes)),
+            "wf_window_sharpes": window_sharpes,
+            "degradation_ratio": degradation,
+            "s1_sharpe": s1_sharpe,
+            "n_windows": len(window_sharpes),
+        }
+        logger.info(
+            "WF eval [%s]: median_sharpe=%.2f, degradation=%.2f, windows=%d",
+            symbol, median_sharpe, degradation, len(window_sharpes),
+        )
+
+    # Save WF metrics
+    eval_dir = output_dir / "evaluation"
+    eval_dir.mkdir(exist_ok=True)
+    save_json(eval_dir / "wf_eval_metrics.json", wf_metrics)
+
+    return wf_metrics
+
+
 def run_final_evaluation(
     all_data: dict[str, dict[str, pd.DataFrame]],
     pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],

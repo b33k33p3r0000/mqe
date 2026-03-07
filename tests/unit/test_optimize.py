@@ -5,6 +5,22 @@ from unittest.mock import patch
 from mqe.optimize import assign_tiers, compute_parallelism
 
 
+class TestWFEvalFunction:
+    def test_run_wf_evaluation_callable(self):
+        """WF eval function exists and is callable."""
+        from mqe.optimize import run_wf_evaluation
+        assert callable(run_wf_evaluation)
+
+    def test_compute_wf_ceiling_callable(self):
+        """compute_wf_ceiling function exists and returns tuple."""
+        from mqe.optimize import compute_wf_ceiling
+        ceiling, n_windows = compute_wf_ceiling(50000)
+        assert isinstance(ceiling, float)
+        assert isinstance(n_windows, int)
+        assert 0.0 < ceiling <= 1.0
+        assert n_windows >= 1
+
+
 class TestComputeParallelism:
     """Tests for adaptive parallelism calculation."""
 
