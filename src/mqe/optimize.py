@@ -629,10 +629,6 @@ def run_pipeline(
     tier_multipliers = {
         sym: info["multiplier"] for sym, info in tier_assignments.items()
     }
-    degradation_ratios = {
-        sym: info["degradation"] for sym, info in tier_assignments.items()
-    }
-
     for sym, info in sorted(
         tier_assignments.items(), key=lambda x: x[1]["sharpe"], reverse=True,
     ):
@@ -656,12 +652,25 @@ def run_pipeline(
         all_data, pair_signals, pair_params, output_dir,
     )
 
-    # ── 7. Stage 2: portfolio optimization with degradation awareness ──
+    # ── 6b. Post-eval gate: override tier to X if full-eval Sharpe < 0 ──
+    for sym, metrics in per_pair_metrics.items():
+        eval_sharpe = metrics.get("sharpe_ratio_equity_based", 0.0)
+        if eval_sharpe < 0 and sym in tier_assignments:
+            old_tier = tier_assignments[sym]["tier"]
+            if old_tier != "X":
+                logger.warning(
+                    "Post-eval gate: %s demoted %s -> X (eval Sharpe %.2f < 0)",
+                    sym, old_tier, eval_sharpe,
+                )
+                tier_assignments[sym]["tier"] = "X"
+                tier_assignments[sym]["multiplier"] = 0.0
+                tier_multipliers[sym] = 0.0
+
+    # ── 7. Stage 2: portfolio optimization ──
     stage2_result = run_stage2(
         all_data, pair_signals, pair_params, stage2_trials,
         output_dir=output_dir,
         tier_multipliers=tier_multipliers,
-        degradation_ratios=degradation_ratios,
     )
     save_json(output_dir / "stage2_result.json", stage2_result)
 
@@ -775,10 +784,6 @@ def resume_pipeline(
     tier_multipliers = {
         sym: info["multiplier"] for sym, info in tier_assignments.items()
     }
-    degradation_ratios = {
-        sym: info["degradation"] for sym, info in tier_assignments.items()
-    }
-
     for sym, info in sorted(
         tier_assignments.items(), key=lambda x: x[1]["sharpe"], reverse=True,
     ):
@@ -796,12 +801,25 @@ def resume_pipeline(
         all_data, pair_signals, pair_params, output_dir,
     )
 
-    # ── 8. Stage 2: portfolio optimization with degradation awareness ──
+    # ── 7b. Post-eval gate: override tier to X if full-eval Sharpe < 0 ──
+    for sym, metrics in per_pair_metrics.items():
+        eval_sharpe = metrics.get("sharpe_ratio_equity_based", 0.0)
+        if eval_sharpe < 0 and sym in tier_assignments:
+            old_tier = tier_assignments[sym]["tier"]
+            if old_tier != "X":
+                logger.warning(
+                    "Post-eval gate: %s demoted %s -> X (eval Sharpe %.2f < 0)",
+                    sym, old_tier, eval_sharpe,
+                )
+                tier_assignments[sym]["tier"] = "X"
+                tier_assignments[sym]["multiplier"] = 0.0
+                tier_multipliers[sym] = 0.0
+
+    # ── 8. Stage 2: portfolio optimization ──
     stage2_result = run_stage2(
         all_data, pair_signals, pair_params, stage2_trials,
         output_dir=output_dir,
         tier_multipliers=tier_multipliers,
-        degradation_ratios=degradation_ratios,
     )
     save_json(output_dir / "stage2_result.json", stage2_result)
 
