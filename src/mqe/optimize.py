@@ -126,6 +126,50 @@ def assign_tiers(
     return tiers
 
 
+def assign_tiers_enhanced(
+    wf_metrics: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Assign quality tiers using WF eval metrics (3-signal tiering).
+
+    Signals:
+      1. Absolute quality: median OOS Sharpe
+      2. Degradation guard: S1/OOS ratio (overfit detection)
+      3. Consistency guard: Sharpe std across windows
+    """
+    from mqe.config import (
+        TIER_DEGRADATION_A,
+        TIER_DEGRADATION_B,
+        TIER_CONSISTENCY_A,
+    )
+    tiers: dict[str, dict[str, Any]] = {}
+    for symbol, wf in wf_metrics.items():
+        median_sharpe = wf.get("wf_sharpe_median", 0.0)
+        consistency = wf.get("wf_sharpe_std", 0.0)
+        degradation = wf.get("degradation_ratio", 0.0)
+
+        if (
+            median_sharpe >= TIER_THRESHOLDS["A"]
+            and degradation >= TIER_DEGRADATION_A
+            and consistency < TIER_CONSISTENCY_A
+        ):
+            tier = "A"
+        elif median_sharpe >= TIER_THRESHOLDS["B"] and degradation >= TIER_DEGRADATION_B:
+            tier = "B"
+        elif median_sharpe >= TIER_THRESHOLDS["C"]:
+            tier = "C"
+        else:
+            tier = "X"
+
+        tiers[symbol] = {
+            "tier": tier,
+            "multiplier": TIER_MULTIPLIERS[tier],
+            "sharpe": median_sharpe,
+            "degradation": degradation,
+            "consistency": consistency,
+        }
+    return tiers
+
+
 def run_per_pair_evaluation(
     all_data: dict[str, dict[str, pd.DataFrame]],
     pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],

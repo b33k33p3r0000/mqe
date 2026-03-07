@@ -149,3 +149,40 @@ class TestAssignTiers:
         tiers = assign_tiers(metrics)
         assert tiers["SYM"]["tier"] == "X"
         assert tiers["SYM"]["multiplier"] == 0.0
+
+
+class TestAssignTiersEnhanced:
+    """Tests for enhanced 3-signal tiering."""
+
+    def test_good_pair_gets_a(self):
+        from mqe.optimize import assign_tiers_enhanced
+        wf_metrics = {
+            "GOOD/USDT": {"wf_sharpe_median": 2.5, "wf_sharpe_std": 0.3, "degradation_ratio": 0.8},
+        }
+        tiers = assign_tiers_enhanced(wf_metrics)
+        assert tiers["GOOD/USDT"]["tier"] == "A"
+
+    def test_overfit_blocked_from_a(self):
+        from mqe.optimize import assign_tiers_enhanced
+        # degradation 0.35 >= TIER_DEGRADATION_B (0.3) but < TIER_DEGRADATION_A (0.5)
+        wf_metrics = {
+            "OVERFIT/USDT": {"wf_sharpe_median": 1.8, "wf_sharpe_std": 0.5, "degradation_ratio": 0.35},
+        }
+        tiers = assign_tiers_enhanced(wf_metrics)
+        assert tiers["OVERFIT/USDT"]["tier"] == "B"  # degradation < 0.5 blocks A
+
+    def test_negative_sharpe_is_x(self):
+        from mqe.optimize import assign_tiers_enhanced
+        wf_metrics = {
+            "BAD/USDT": {"wf_sharpe_median": -0.5, "wf_sharpe_std": 1.0, "degradation_ratio": -0.2},
+        }
+        tiers = assign_tiers_enhanced(wf_metrics)
+        assert tiers["BAD/USDT"]["tier"] == "X"
+
+    def test_inconsistent_blocked_from_a(self):
+        from mqe.optimize import assign_tiers_enhanced
+        wf_metrics = {
+            "INCONS/USDT": {"wf_sharpe_median": 2.0, "wf_sharpe_std": 2.0, "degradation_ratio": 0.7},
+        }
+        tiers = assign_tiers_enhanced(wf_metrics)
+        assert tiers["INCONS/USDT"]["tier"] == "B"  # std > 1.5 blocks A
