@@ -38,7 +38,6 @@ from mqe.config import (
     ANCHORED_WF_SPLITS_LONG,
     ANCHORED_WF_SPLITS_SHORT,
     BASE_TF,
-    DEFAULT_TRIALS_STAGE1,
     ENABLE_PRUNING,
     MIN_DRAWDOWN_FLOOR,
     MIN_STARTUP_TRIALS,
@@ -52,10 +51,11 @@ from mqe.config import (
     STARTUP_TRIALS_RATIO,
     TPE_CONSIDER_ENDPOINTS,
     TPE_N_EI_CANDIDATES,
+    TRIALS_LONG,
     TRIALS_LONG_THRESHOLD_HOURS,
+    TRIALS_MEDIUM,
     TRIALS_MEDIUM_THRESHOLD_HOURS,
-    TRIALS_RATIO_MEDIUM,
-    TRIALS_RATIO_SHORT,
+    TRIALS_SHORT,
 )
 from mqe.core.backtest import simulate_trades_fast
 from mqe.core.indicators import rsi as compute_rsi
@@ -68,17 +68,17 @@ logger = logging.getLogger("mqe.stage1")
 # ─── DATA-ADAPTIVE TRIALS ──────────────────────────────────────────────────
 
 
-def compute_trials(n_bars: int, base_trials: int = DEFAULT_TRIALS_STAGE1) -> int:
+def compute_trials(n_bars: int) -> int:
     """Compute data-adaptive trial count.
 
     Pairs with less data get fewer trials to reduce overfit opportunity.
     """
     if n_bars >= TRIALS_LONG_THRESHOLD_HOURS:
-        return base_trials
+        return TRIALS_LONG
     elif n_bars >= TRIALS_MEDIUM_THRESHOLD_HOURS:
-        return int(base_trials * TRIALS_RATIO_MEDIUM)
+        return TRIALS_MEDIUM
     else:
-        return int(base_trials * TRIALS_RATIO_SHORT)
+        return TRIALS_SHORT
 
 
 # ─── AWF SPLITS ─────────────────────────────────────────────────────────────
@@ -413,7 +413,7 @@ class ProgressCallback:
 def run_stage1_pair(
     symbol: str,
     data: dict[str, pd.DataFrame],
-    n_trials: int = DEFAULT_TRIALS_STAGE1,
+    n_trials: int = TRIALS_LONG,
     n_splits: int | None = None,
     seed: int = 42,
     timeout: int = 0,

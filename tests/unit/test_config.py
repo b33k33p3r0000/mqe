@@ -158,9 +158,15 @@ def test_awf_long_threshold_defined():
 
 
 def test_trial_thresholds_defined():
-    from mqe.config import TRIALS_LONG_THRESHOLD_HOURS, TRIALS_MEDIUM_THRESHOLD_HOURS
-    from mqe.config import TRIALS_RATIO_MEDIUM, TRIALS_RATIO_SHORT
+    from mqe.config import (
+        TRIALS_LONG_THRESHOLD_HOURS,
+        TRIALS_MEDIUM_THRESHOLD_HOURS,
+        TRIALS_LONG,
+        TRIALS_MEDIUM,
+        TRIALS_SHORT,
+    )
     assert TRIALS_LONG_THRESHOLD_HOURS == 43800
-    assert TRIALS_MEDIUM_THRESHOLD_HOURS == 26280
-    assert TRIALS_RATIO_MEDIUM == 0.7
-    assert TRIALS_RATIO_SHORT == 0.4
+    assert TRIALS_MEDIUM_THRESHOLD_HOURS == 26000
+    assert TRIALS_LONG == 65_000
+    assert TRIALS_MEDIUM == 50_000
+    assert TRIALS_SHORT == 35_000

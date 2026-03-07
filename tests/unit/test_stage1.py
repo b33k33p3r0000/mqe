@@ -334,19 +334,19 @@ class TestProgressCallback:
 
 class TestComputeTrials:
     def test_compute_trials_long_data(self):
-        assert compute_trials(50000, base_trials=100_000) == 100_000
+        assert compute_trials(50000) == 65_000
 
     def test_compute_trials_medium_data(self):
-        assert compute_trials(30000, base_trials=100_000) == 70_000
+        assert compute_trials(30000) == 50_000
 
     def test_compute_trials_short_data(self):
-        assert compute_trials(20000, base_trials=100_000) == 40_000
+        assert compute_trials(20000) == 35_000
 
     def test_compute_trials_boundary_long(self):
-        assert compute_trials(43800, base_trials=100_000) == 100_000
+        assert compute_trials(43800) == 65_000
 
     def test_compute_trials_boundary_medium(self):
-        assert compute_trials(26280, base_trials=100_000) == 70_000
+        assert compute_trials(26000) == 50_000
 
 
 # ─── AWF splits count by data length ──────────────────────────────────────

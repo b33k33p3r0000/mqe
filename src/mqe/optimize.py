@@ -35,7 +35,6 @@ from mqe.config import (
     BASE_TF,
     CLUSTER_DEFINITIONS,
     CORRELATION_GATE_THRESHOLD,
-    DEFAULT_TRIALS_STAGE1,
     DEFAULT_TRIALS_STAGE2,
     DISCORD_WEBHOOK_RUNS,
     MIN_WARMUP_BARS,
@@ -43,6 +42,7 @@ from mqe.config import (
     SYMBOLS,
     TIER_MULTIPLIERS,
     TIER_THRESHOLDS,
+    TRIALS_LONG,
 )
 from mqe.core.backtest import simulate_trades_fast
 from mqe.core.metrics import MetricsResult, calculate_metrics
@@ -379,7 +379,7 @@ def run_stage1_all_pairs(
         for symbol in symbols:
             if adaptive_trials:
                 n_bars = len(all_data[symbol][BASE_TF])
-                pair_trials = compute_trials(n_bars, n_trials)
+                pair_trials = compute_trials(n_bars)
             else:
                 pair_trials = n_trials
             future = executor.submit(
@@ -402,7 +402,7 @@ def run_stage1_all_pairs(
 
 def run_pipeline(
     symbols: list[str] | None = None,
-    stage1_trials: int = DEFAULT_TRIALS_STAGE1,
+    stage1_trials: int = TRIALS_LONG,
     stage2_trials: int = DEFAULT_TRIALS_STAGE2,
     hours: int = 8760,
     output_dir: Path | None = None,
@@ -657,7 +657,7 @@ def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="MQE Optimization Pipeline")
     parser.add_argument("--symbols", nargs="+", default=SYMBOLS)
-    parser.add_argument("--s1-trials", type=int, default=DEFAULT_TRIALS_STAGE1)
+    parser.add_argument("--s1-trials", type=int, default=TRIALS_LONG)
     parser.add_argument("--s2-trials", type=int, default=DEFAULT_TRIALS_STAGE2)
     parser.add_argument("--hours", type=int, default=8760)
     parser.add_argument("--tag", type=str, default="")
