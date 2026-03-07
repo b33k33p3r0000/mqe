@@ -526,15 +526,17 @@ def run_stage1_all_pairs(
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
         for symbol in symbols:
+            n_bars = len(all_data[symbol][BASE_TF])
             if adaptive_trials:
-                n_bars = len(all_data[symbol][BASE_TF])
                 pair_trials = compute_trials(n_bars)
             else:
                 pair_trials = n_trials
+            pair_ceiling, _ = compute_wf_ceiling(n_bars)
             future = executor.submit(
                 run_stage1_pair, symbol, all_data[symbol], pair_trials,
                 output_dir=output_dir,
                 n_jobs=jobs_per_pair,
+                ceiling=pair_ceiling,
             )
             futures[future] = symbol
         for future in as_completed(futures):
@@ -613,21 +615,31 @@ def run_pipeline(
     btc_params = pair_params.get("BTC/USDT")
     pair_signals = precompute_all_signals(all_data, pair_params, btc_params)
 
-    # ── 4. Per-pair evaluation for tier assignment ──
-    per_pair_metrics = run_per_pair_evaluation(
-        all_data, pair_signals, pair_params, output_dir,
+    # ── 4. Walk-forward evaluation (OOS windows) ──
+    s1_sharpes = {
+        sym: res.get("sharpe_equity", 0.0)
+        for sym, res in stage1_results.items()
+    }
+    wf_metrics = run_wf_evaluation(
+        all_data, pair_signals, pair_params, s1_sharpes, output_dir,
     )
-    tier_assignments = assign_tiers(per_pair_metrics)
+
+    # ── 5. Enhanced tiering (3-signal: OOS Sharpe + degradation + consistency) ──
+    tier_assignments = assign_tiers_enhanced(wf_metrics)
     tier_multipliers = {
         sym: info["multiplier"] for sym, info in tier_assignments.items()
+    }
+    degradation_ratios = {
+        sym: info["degradation"] for sym, info in tier_assignments.items()
     }
 
     for sym, info in sorted(
         tier_assignments.items(), key=lambda x: x[1]["sharpe"], reverse=True,
     ):
         logger.info(
-            "Tier %s: %s (Sharpe %.2f, mult %.2f)",
-            info["tier"], sym, info["sharpe"], info["multiplier"],
+            "Tier %s: %s (OOS Sharpe %.2f, degrad %.2f, std %.2f, mult %.2f)",
+            info["tier"], sym, info["sharpe"], info["degradation"],
+            info["consistency"], info["multiplier"],
         )
     active_count = sum(
         1 for t in tier_assignments.values() if t["tier"] != "X"
@@ -639,22 +651,28 @@ def run_pipeline(
         "Tiers: %d active, %d excluded (Tier X)", active_count, excluded_count,
     )
 
-    # ── 5. Stage 2: portfolio optimization ──
+    # ── 6. Per-pair evaluation (full data for reporting) ──
+    per_pair_metrics = run_per_pair_evaluation(
+        all_data, pair_signals, pair_params, output_dir,
+    )
+
+    # ── 7. Stage 2: portfolio optimization with degradation awareness ──
     stage2_result = run_stage2(
         all_data, pair_signals, pair_params, stage2_trials,
         output_dir=output_dir,
         tier_multipliers=tier_multipliers,
+        degradation_ratios=degradation_ratios,
     )
     save_json(output_dir / "stage2_result.json", stage2_result)
 
-    # ── 6. Final evaluation ──
+    # ── 8. Final evaluation ──
     eval_result = run_final_evaluation(
         all_data, pair_signals, pair_params, stage2_result, output_dir,
         per_pair_metrics=per_pair_metrics,
         tier_multipliers=tier_multipliers,
     )
 
-    # ── 7. Save combined results ──
+    # ── 9. Save combined results ──
     combined: dict[str, Any] = {
         "symbols": symbols,
         "stage1_trials": stage1_trials,
@@ -665,10 +683,11 @@ def run_pipeline(
         "stage1_results": stage1_results,
         "stage2_results": stage2_result,
         "tier_assignments": tier_assignments,
+        "wf_eval_metrics": wf_metrics,
     }
     save_json(output_dir / "pipeline_result.json", combined)
 
-    # ── 8. Analyze + Report ──
+    # ── 10. Analyze + Report ──
     analysis = analyze_run(combined, eval_result)
     print_report(analysis, combined, eval_result)
     save_markdown_report(
@@ -742,35 +761,58 @@ def resume_pipeline(
     btc_params = pair_params.get("BTC/USDT")
     pair_signals = precompute_all_signals(all_data, pair_params, btc_params)
 
-    # ── 5. Per-pair evaluation for tier assignment ──
-    per_pair_metrics = run_per_pair_evaluation(
-        all_data, pair_signals, pair_params, output_dir,
+    # ── 5. Walk-forward evaluation (OOS windows) ──
+    s1_sharpes = {
+        sym: res.get("sharpe_equity", 0.0)
+        for sym, res in stage1_results.items()
+    }
+    wf_metrics = run_wf_evaluation(
+        all_data, pair_signals, pair_params, s1_sharpes, output_dir,
     )
-    tier_assignments = assign_tiers(per_pair_metrics)
-    tier_multipliers = {sym: info["multiplier"] for sym, info in tier_assignments.items()}
 
-    for sym, info in sorted(tier_assignments.items(), key=lambda x: x[1]["sharpe"], reverse=True):
-        logger.info("Tier %s: %s (Sharpe %.2f, mult %.2f)", info["tier"], sym, info["sharpe"], info["multiplier"])
+    # ── 6. Enhanced tiering (3-signal: OOS Sharpe + degradation + consistency) ──
+    tier_assignments = assign_tiers_enhanced(wf_metrics)
+    tier_multipliers = {
+        sym: info["multiplier"] for sym, info in tier_assignments.items()
+    }
+    degradation_ratios = {
+        sym: info["degradation"] for sym, info in tier_assignments.items()
+    }
+
+    for sym, info in sorted(
+        tier_assignments.items(), key=lambda x: x[1]["sharpe"], reverse=True,
+    ):
+        logger.info(
+            "Tier %s: %s (OOS Sharpe %.2f, degrad %.2f, std %.2f, mult %.2f)",
+            info["tier"], sym, info["sharpe"], info["degradation"],
+            info["consistency"], info["multiplier"],
+        )
     active_count = sum(1 for t in tier_assignments.values() if t["tier"] != "X")
     excluded_count = sum(1 for t in tier_assignments.values() if t["tier"] == "X")
     logger.info("Tiers: %d active, %d excluded (Tier X)", active_count, excluded_count)
 
-    # ── 6. Stage 2: portfolio optimization ──
+    # ── 7. Per-pair evaluation (full data for reporting) ──
+    per_pair_metrics = run_per_pair_evaluation(
+        all_data, pair_signals, pair_params, output_dir,
+    )
+
+    # ── 8. Stage 2: portfolio optimization with degradation awareness ──
     stage2_result = run_stage2(
         all_data, pair_signals, pair_params, stage2_trials,
         output_dir=output_dir,
         tier_multipliers=tier_multipliers,
+        degradation_ratios=degradation_ratios,
     )
     save_json(output_dir / "stage2_result.json", stage2_result)
 
-    # ── 7. Final evaluation ──
+    # ── 9. Final evaluation ──
     eval_result = run_final_evaluation(
         all_data, pair_signals, pair_params, stage2_result, output_dir,
         per_pair_metrics=per_pair_metrics,
         tier_multipliers=tier_multipliers,
     )
 
-    # ── 8. Save combined results ──
+    # ── 10. Save combined results ──
     # Reconstruct stage1_trials from loaded results
     stage1_trials_val = max(
         (r.get("n_trials_requested", 0) for r in stage1_results.values()),
@@ -787,10 +829,11 @@ def resume_pipeline(
         "stage1_results": stage1_results,
         "stage2_results": stage2_result,
         "tier_assignments": tier_assignments,
+        "wf_eval_metrics": wf_metrics,
     }
     save_json(output_dir / "pipeline_result.json", combined)
 
-    # ── 9. Analyze + Report ──
+    # ── 11. Analyze + Report ──
     analysis = analyze_run(combined, eval_result)
     print_report(analysis, combined, eval_result)
     save_markdown_report(

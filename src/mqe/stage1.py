@@ -463,6 +463,7 @@ def run_stage1_pair(
     output_dir: Path | None = None,
     progress_interval: int = 100,
     n_jobs: int = 1,
+    ceiling: float = 1.0,
 ) -> dict[str, Any]:
     """Run Stage 1 optimization for a single pair.
 
@@ -481,6 +482,7 @@ def run_stage1_pair(
         output_dir: Directory for progress/result files (None = no file output).
         progress_interval: Write progress every N trials (default 100).
         n_jobs: Number of parallel trial workers per pair (default 1).
+        ceiling: Max data fraction for S1 training (1.0 = all, 0.7 = first 70%).
             With n_jobs > 1, Optuna uses ThreadPoolExecutor + constant_liar
             to run multiple trials concurrently. Numba-compiled backtest
             releases GIL, so threads achieve true parallelism for the
@@ -493,7 +495,7 @@ def run_stage1_pair(
     total_bars = len(base_df)
 
     # Compute AWF splits
-    splits = compute_awf_splits(total_bars, n_splits, test_size=test_size)
+    splits = compute_awf_splits(total_bars, n_splits, test_size=test_size, ceiling=ceiling)
     if splits is None:
         raise ValueError(
             f"Data too short for AWF: {total_bars} bars < {ANCHORED_WF_MIN_DATA_HOURS}"
