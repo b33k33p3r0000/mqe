@@ -4,10 +4,11 @@ MQE Stage 2 — Portfolio-level NSGA-II multi-objective optimization.
 Optimizes global portfolio params using PortfolioSimulator.
 Runs AFTER Stage 1 per-pair optimization is complete.
 
-3 objectives (all maximized by negating minimization targets):
+4 objectives (all maximized by negating minimization targets):
   1. Portfolio Calmar ratio (maximize)
   2. Worst-pair Calmar ratio (maximize) — robustness guard
   3. Negative overfit penalty (maximize = minimize overfit)
+  4. Negative degradation penalty (maximize = minimize overfit-pair PnL weight)
 
 Global params optimized:
   - max_concurrent: max simultaneous open positions
@@ -51,15 +52,18 @@ def build_portfolio_objective(
     pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     pair_params: dict[str, dict[str, Any]],
     tier_multipliers: dict[str, float] | None = None,
+    degradation_ratios: dict[str, float] | None = None,
 ) -> Callable:
     """Build multi-objective function for Stage 2.
 
-    Returns callable(trial) -> (portfolio_calmar, worst_pair_calmar, neg_overfit_penalty)
+    Returns callable(trial) -> (portfolio_calmar, worst_pair_calmar,
+                                neg_overfit_penalty, neg_degradation_penalty)
 
     Args:
         pair_data: Dict of {symbol: {timeframe: DataFrame}} per pair.
         pair_signals: Dict of {symbol: (buy, sell, atr, signal_strength)} per pair.
         pair_params: Dict of {symbol: {param_name: value}} per pair (from Stage 1).
+        degradation_ratios: Dict of {symbol: float} from WF eval (overfit detection).
     """
     n_pairs = len(pair_data)
 
@@ -71,14 +75,16 @@ def build_portfolio_objective(
             returns_dict[symbol] = close.pct_change().dropna()
     corr_matrix = compute_pairwise_correlation(returns_dict) if returns_dict else {}
 
-    def objective(trial: optuna.trial.Trial) -> tuple[float, float, float]:
+    _degradation = degradation_ratios or {}
+
+    def objective(trial: optuna.trial.Trial) -> tuple[float, float, float, float]:
         # ── Portfolio-level params ──
         max_concurrent = trial.suggest_int(
             "max_concurrent", min(3, n_pairs), min(n_pairs, 10)
         )
         cluster_max = trial.suggest_int("cluster_max", 1, 3)
         portfolio_heat = trial.suggest_float("portfolio_heat", 0.03, 0.10)
-        corr_gate_threshold = trial.suggest_float("corr_gate_threshold", 0.60, 0.90)
+        corr_gate_threshold = trial.suggest_float("corr_gate_threshold", 0.50, 0.80)
 
         # Build cluster_max dict from the single optimized value
         cluster_max_dict = {
@@ -149,14 +155,28 @@ def build_portfolio_objective(
             overfit_penalty += 0.5  # too restrictive — may overfit to single best pair
         if portfolio_heat < 0.035:
             overfit_penalty += 0.3  # too tight heat — may overfit to low-vol regime
-        if corr_gate_threshold < 0.65:
+        if corr_gate_threshold < 0.55:
             overfit_penalty += 0.2  # too loose gate — no real filtering
 
         # Penalize if no trades produced (degenerate config)
         if len(result.all_trades) == 0:
             overfit_penalty += 1.0
 
-        return portfolio_calmar, worst_calmar, -overfit_penalty
+        # ── Objective 4: Degradation penalty (minimize -> negate) ──
+        degradation_penalty = 0.0
+        if _degradation:
+            for sym, trades in result.per_pair_trades.items():
+                sym_deg = _degradation.get(sym, 1.0)
+                if sym_deg < 0.4 and len(trades) > 0:
+                    pair_pnl = sum(t.get("pnl_abs", 0.0) for t in trades)
+                    total_pnl = sum(
+                        sum(t.get("pnl_abs", 0.0) for t in ts)
+                        for ts in result.per_pair_trades.values()
+                    )
+                    pair_weight = abs(pair_pnl) / max(abs(total_pnl), 1.0)
+                    degradation_penalty += pair_weight * (0.4 - sym_deg)
+
+        return portfolio_calmar, worst_calmar, -overfit_penalty, -degradation_penalty
 
     return objective
 
@@ -233,6 +253,7 @@ def run_stage2(
     seed: int = 42,
     output_dir: Path | None = None,
     tier_multipliers: dict[str, float] | None = None,
+    degradation_ratios: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Run Stage 2 portfolio optimization with NSGA-II.
 
@@ -256,6 +277,7 @@ def run_stage2(
     objective = build_portfolio_objective(
         pair_data, pair_signals, pair_params,
         tier_multipliers=tier_multipliers,
+        degradation_ratios=degradation_ratios,
     )
 
     sampler = optuna.samplers.NSGAIISampler(
@@ -264,7 +286,7 @@ def run_stage2(
     )
 
     study = optuna.create_study(
-        directions=["maximize", "maximize", "maximize"],
+        directions=["maximize", "maximize", "maximize", "maximize"],
         sampler=sampler,
     )
 
@@ -290,6 +312,7 @@ def run_stage2(
                 "portfolio_calmar": 0.0,
                 "worst_pair_calmar": 0.0,
                 "neg_overfit_penalty": 0.0,
+                "neg_degradation_penalty": 0.0,
             },
             "n_trials": n_trials,
             "pareto_front_size": 0,
@@ -309,6 +332,7 @@ def run_stage2(
             "portfolio_calmar": best.values[0],
             "worst_pair_calmar": best.values[1],
             "neg_overfit_penalty": best.values[2],
+            "neg_degradation_penalty": best.values[3],
         },
         "n_trials": n_trials,
         "pareto_front_size": len(best_trials),

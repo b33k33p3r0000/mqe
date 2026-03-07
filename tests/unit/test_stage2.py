@@ -73,20 +73,20 @@ class TestBuildPortfolioObjective:
         obj = build_portfolio_objective(pair_data, pair_signals, pair_params)
         assert callable(obj)
 
-    def test_objective_returns_3_values(self):
-        """Multi-objective returns exactly 3 float values."""
+    def test_objective_returns_4_values(self):
+        """Multi-objective returns exactly 4 float values."""
         pair_data, pair_signals, pair_params = _build_synthetic_inputs()
         obj = build_portfolio_objective(pair_data, pair_signals, pair_params)
 
         study = optuna.create_study(
-            directions=["maximize", "maximize", "maximize"],
+            directions=["maximize", "maximize", "maximize", "maximize"],
             sampler=optuna.samplers.NSGAIISampler(seed=42),
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         study.optimize(obj, n_trials=1, show_progress_bar=False)
 
         trial = study.trials[0]
-        assert len(trial.values) == 3
+        assert len(trial.values) == 4
         for v in trial.values:
             assert isinstance(v, float)
 
@@ -96,7 +96,7 @@ class TestBuildPortfolioObjective:
         obj = build_portfolio_objective(pair_data, pair_signals, pair_params)
 
         study = optuna.create_study(
-            directions=["maximize", "maximize", "maximize"],
+            directions=["maximize", "maximize", "maximize", "maximize"],
             sampler=optuna.samplers.NSGAIISampler(seed=42),
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -112,7 +112,7 @@ class TestBuildPortfolioObjective:
         obj = build_portfolio_objective(pair_data, pair_signals, pair_params)
 
         study = optuna.create_study(
-            directions=["maximize", "maximize", "maximize"],
+            directions=["maximize", "maximize", "maximize", "maximize"],
             sampler=optuna.samplers.NSGAIISampler(seed=42),
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -227,8 +227,8 @@ class TestNSGA2Sampler:
         sampler = optuna.samplers.NSGAIISampler(population_size=50, seed=42)
         assert isinstance(sampler, optuna.samplers.NSGAIISampler)
 
-    def test_study_has_3_directions(self):
-        """Multi-objective study has exactly 3 maximize directions."""
+    def test_study_has_4_directions(self):
+        """Multi-objective study has exactly 4 maximize directions."""
         pair_data, pair_signals, pair_params = _build_synthetic_inputs(
             n_bars=500, n_pairs=2,
         )
@@ -236,11 +236,11 @@ class TestNSGA2Sampler:
 
         sampler = optuna.samplers.NSGAIISampler(population_size=50, seed=42)
         study = optuna.create_study(
-            directions=["maximize", "maximize", "maximize"],
+            directions=["maximize", "maximize", "maximize", "maximize"],
             sampler=sampler,
         )
         assert study.directions is not None
-        assert len(study.directions) == 3
+        assert len(study.directions) == 4
 
 
 # ─── Pareto front selection ────────────────────────────────────────────────
@@ -280,3 +280,38 @@ class TestParetoFrontSelection:
         assert "portfolio_params" in result
         assert "objectives" in result
         assert "pareto_front_size" in result
+
+
+# ─── Stage 2 revisions ────────────────────────────────────────────────────
+
+
+class TestStage2Revisions:
+    def test_build_objective_accepts_degradation(self):
+        """build_portfolio_objective accepts degradation_ratios parameter."""
+        import inspect
+        sig = inspect.signature(build_portfolio_objective)
+        assert "degradation_ratios" in sig.parameters
+
+    def test_objective_returns_4_values(self):
+        """Multi-objective now returns 4 float values."""
+        pair_data, pair_signals, pair_params = _build_synthetic_inputs()
+        obj = build_portfolio_objective(
+            pair_data, pair_signals, pair_params,
+            degradation_ratios={"BTC/USDT": 0.8, "ETH/USDT": 0.3},
+        )
+
+        study = optuna.create_study(
+            directions=["maximize", "maximize", "maximize", "maximize"],
+            sampler=optuna.samplers.NSGAIISampler(seed=42),
+        )
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        study.optimize(obj, n_trials=1, show_progress_bar=False)
+
+        trial = study.trials[0]
+        assert len(trial.values) == 4
+
+    def test_run_stage2_accepts_degradation(self):
+        """run_stage2 accepts degradation_ratios parameter."""
+        import inspect
+        sig = inspect.signature(run_stage2)
+        assert "degradation_ratios" in sig.parameters
