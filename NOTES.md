@@ -75,3 +75,24 @@ Full MQE (Multi-pair Quant Engine) implementation from scratch — 18 TDD tasks,
 
 ### Current state
 - 267 tests, all passing
+
+---
+
+## 2026-03-07 — /analyze 20260306_213212
+
+**Verdict:** MEDIUM — Post-analysis improvements (WF eval tiering, 4-objective NSGA-II) fungovaly mechanicky správně, ale celkový portfolio výsledek je horší než před úpravami (Sharpe 3.98 vs 4.27, PnL +260% vs +330%).
+
+**Key findings:**
+- 4-objective NSGA-II degradoval worst_pair_calmar 0.97 → 0.063 bez kompenzace (degradation penalty de facto nulový ~0.002)
+- ARB false inclusion: WF eval ho propustil jako B-tier, ale full-eval ukazuje Sharpe -0.14 a PnL -5.3%
+- cluster_max 3→2 zvýšil blokování trades z 21% na 33% bez proporcionálního DD zlepšení
+
+**Decided actions:**
+- [x] S1: Revert na 3-objective NSGA-II — odstranění degradation objective (f947299)
+- [x] R1: Post-eval gate — páry s full-eval Sharpe < 0 degradovány na tier X před S2 (f947299)
+- [x] R2: Zvýšení DEFAULT_TRIALS_STAGE2 z 5,000 na 10,000 (f947299)
+
+**Deferred:**
+- R3: cluster_max range 1-4 — vyžaduje nový run pro ověření
+- S2: Dynamický B-tier threshold — nízká priorita, post-eval gate řeší akutní problém
+- S3: Weighted Pareto front selection — exploratory, vyžaduje research

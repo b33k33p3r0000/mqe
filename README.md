@@ -175,7 +175,7 @@ All config in `src/mqe/config.py`. Key constants:
 | `BACKTEST_POSITION_PCT` | 20% | Per-pair position size (Stage 1) |
 | `FEE` | 0.06% (6 bps) | Trading fee per side (Binance VIP0 taker + buffer) |
 | `DEFAULT_TRIALS_STAGE1` | 10,000 | Optuna trials per pair |
-| `DEFAULT_TRIALS_STAGE2` | 5,000 | NSGA-II trials |
+| `DEFAULT_TRIALS_STAGE2` | 10,000 | NSGA-II trials |
 | `MIN_TRADES_YEAR_HARD` | 60 | Minimum trades/year constraint |
 | `MIN_TRADES_TEST_HARD` | 5 | Minimum trades in test set |
 | `PURGE_GAP_BARS` | 50 | AWF purge gap between train/test |
