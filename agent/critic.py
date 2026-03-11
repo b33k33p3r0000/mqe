@@ -9,8 +9,9 @@ Usage:
 """
 import csv
 import json
+import statistics
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 # ── Constants ─────────────────────────────────────────────────────────
@@ -19,7 +20,7 @@ _MIN_DD_FLOOR = 0.05          # DD floor used in optimizer objective
 _DD_FLOOR_TOL = 0.001         # Tolerance for DD-floor proximity detection
 _WF_DEGRADE_FAIL = 0.33       # OOS/S1 ratio below this = FAIL (strong overfit)
 _WF_DEGRADE_WARN = 0.70       # Below this = WARNING
-_EQUITY_MISMATCH_FAIL = 0.05  # >5% per-pair sum vs total_pnl = FAIL
+_EQUITY_MISMATCH_FAIL = 0.05  # >5% trades sum vs total_pnl = FAIL
 _EQUITY_MISMATCH_WARN = 0.02  # >2% = WARNING
 _TRADE_CONC_FAIL = 0.60       # Single quarter > 60% of total PnL = FAIL
 _TRADE_CONC_WARN = 0.50       # > 50% = WARNING
@@ -38,15 +39,15 @@ def _read_json(path: Path) -> Dict[str, Any]:
 def _check_result(
     name: str,
     status: str,
-    message: str,
+    detail: str,
     value: Optional[float] = None,
     threshold: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Build a standardized check result dict."""
     result: Dict[str, Any] = {
-        "check": name,
+        "name": name,
         "status": status,
-        "message": message,
+        "detail": detail,
     }
     if value is not None:
         result["value"] = value
@@ -55,183 +56,236 @@ def _check_result(
     return result
 
 
+def _extract_metrics(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Extract key metrics from a loaded run data dict for LLM context."""
+    if data is None:
+        return None
+    portfolio = data.get("portfolio", {})
+    return {
+        "total_pnl": portfolio.get("total_pnl"),
+        "portfolio_max_drawdown": portfolio.get("portfolio_max_drawdown"),
+        "sortino_ratio": portfolio.get("sortino_ratio"),
+        "calmar_ratio": portfolio.get("calmar_ratio"),
+        "sharpe_ratio_equity_based": portfolio.get("sharpe_ratio_equity_based"),
+        "trades": portfolio.get("trades"),
+        "win_rate": portfolio.get("win_rate"),
+    }
+
+
+def _format_history_summary(history: List[Dict[str, Any]]) -> str:
+    """Format history list as a brief text summary."""
+    if not history:
+        return "No previous history."
+    lines = []
+    for i, entry in enumerate(history[-5:], 1):
+        lines.append(f"  {i}. {json.dumps(entry)}")
+    return "\n".join(lines)
+
+
 # ── Data loading ──────────────────────────────────────────────────────
 
 def load_run_data(run_dir: Path) -> Dict[str, Any]:
-    """Load pipeline.json from a run directory.
+    """Load pipeline_result.json and portfolio_metrics.json from a run directory.
 
     Args:
         run_dir: Path to the run directory (e.g. results/20260307_120000/).
 
     Returns:
-        Parsed pipeline.json as a dict.
+        Dict with keys: pipeline, portfolio, wf_eval_metrics, tier_assignments.
 
     Raises:
-        FileNotFoundError: If evaluation/pipeline.json does not exist.
+        FileNotFoundError: If pipeline_result.json does not exist.
     """
-    pipeline_path = run_dir / "evaluation" / "pipeline.json"
+    run_dir = Path(run_dir)
+    pipeline_path = run_dir / "pipeline_result.json"
     if not pipeline_path.exists():
-        raise FileNotFoundError(f"pipeline.json not found at {pipeline_path}")
-    return _read_json(pipeline_path)
+        raise FileNotFoundError(f"pipeline_result.json not found at {pipeline_path}")
+    pipeline = _read_json(pipeline_path)
+
+    portfolio_path = run_dir / "evaluation" / "portfolio_metrics.json"
+    portfolio: Dict[str, Any] = {}
+    if portfolio_path.exists():
+        portfolio = _read_json(portfolio_path)
+
+    return {
+        "pipeline": pipeline,
+        "portfolio": portfolio,
+        "wf_eval_metrics": pipeline.get("wf_eval_metrics", {}),
+        "tier_assignments": pipeline.get("tier_assignments", {}),
+    }
 
 
-def load_trades(run_dir: Path) -> List[Dict[str, str]]:
-    """Load trades.csv from a run directory.
+def load_trades(run_dir: Path) -> List[Dict[str, Any]]:
+    """Load all per-pair trade CSVs from evaluation/per_pair_trades/.
 
     Args:
         run_dir: Path to the run directory.
 
     Returns:
-        List of dicts, one per trade row (all values as strings).
+        List of dicts, one per trade row. pnl_abs and pnl_pct are floats.
 
     Raises:
-        FileNotFoundError: If evaluation/trades.csv does not exist.
+        FileNotFoundError: If evaluation/per_pair_trades/ does not exist.
     """
-    trades_path = run_dir / "evaluation" / "trades.csv"
-    if not trades_path.exists():
-        raise FileNotFoundError(f"trades.csv not found at {trades_path}")
-    with open(trades_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        return list(reader)
+    trades_dir = Path(run_dir) / "evaluation" / "per_pair_trades"
+    if not trades_dir.exists():
+        raise FileNotFoundError(
+            f"per_pair_trades/ directory not found at {trades_dir}"
+        )
+    all_trades: List[Dict[str, Any]] = []
+    for csv_path in sorted(trades_dir.glob("*.csv")):
+        with open(csv_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                row["pnl_abs"] = float(row["pnl_abs"])
+                row["pnl_pct"] = float(row["pnl_pct"])
+                all_trades.append(row)
+    return all_trades
 
 
 # ── Check functions ───────────────────────────────────────────────────
 
-def check_wf_degradation(run_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Check walk-forward degradation ratios across all pairs.
+def check_wf_degradation(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Check walk-forward degradation ratios, excluding X-tier pairs.
 
-    Flags pairs where OOS/S1 degradation_ratio is below thresholds,
+    Flags when OOS/S1 median degradation_ratio is below _WF_DEGRADE_FAIL,
     indicating the strategy may have overfit to training data.
 
     Args:
-        run_data: Parsed pipeline.json dict.
+        data: Dict from load_run_data() with wf_eval_metrics and tier_assignments.
 
     Returns:
         Check result dict with status PASS / WARNING / FAIL.
     """
-    wf_metrics = run_data.get("wf_eval_metrics", {})
-    if not wf_metrics:
+    wf = data.get("wf_eval_metrics", {})
+    tiers = data.get("tier_assignments", {})
+
+    if not wf:
         return _check_result(
             "wf_degradation", "WARNING",
             "No wf_eval_metrics found in pipeline data",
         )
 
-    fail_pairs = []
-    warn_pairs = []
-    min_ratio = 1.0
+    ratios = []
+    for sym, metrics in wf.items():
+        if tiers.get(sym, {}).get("tier") == "X":
+            continue
+        ratios.append(metrics.get("degradation_ratio", 0.0))
 
-    for symbol, metrics in wf_metrics.items():
-        ratio = metrics.get("degradation_ratio", 1.0)
-        if ratio < min_ratio:
-            min_ratio = ratio
-        if ratio < _WF_DEGRADE_FAIL:
-            fail_pairs.append(f"{symbol}={ratio:.2f}")
-        elif ratio < _WF_DEGRADE_WARN:
-            warn_pairs.append(f"{symbol}={ratio:.2f}")
-
-    if fail_pairs:
+    if not ratios:
         return _check_result(
             "wf_degradation", "FAIL",
-            f"Strong overfit signal — degradation_ratio < {_WF_DEGRADE_FAIL} "
-            f"for: {', '.join(fail_pairs)}",
-            value=min_ratio,
-            threshold=_WF_DEGRADE_FAIL,
+            "No non-X pairs with WF data",
+            0.0, _WF_DEGRADE_FAIL,
         )
-    if warn_pairs:
+
+    median_ratio = statistics.median(ratios)
+
+    if median_ratio < _WF_DEGRADE_FAIL:
+        return _check_result(
+            "wf_degradation", "FAIL",
+            f"Severe overfit: median OOS/S1 = {median_ratio:.3f}",
+            median_ratio, _WF_DEGRADE_FAIL,
+        )
+    if median_ratio < _WF_DEGRADE_WARN:
         return _check_result(
             "wf_degradation", "WARNING",
-            f"Elevated WF degradation for: {', '.join(warn_pairs)}",
-            value=min_ratio,
-            threshold=_WF_DEGRADE_WARN,
+            f"Elevated WF degradation: median = {median_ratio:.3f}",
+            median_ratio, _WF_DEGRADE_WARN,
         )
     return _check_result(
         "wf_degradation", "PASS",
-        "Walk-forward degradation ratios within acceptable range",
-        value=min_ratio,
-        threshold=_WF_DEGRADE_WARN,
+        f"WF degradation OK: median = {median_ratio:.3f}",
+        median_ratio, _WF_DEGRADE_WARN,
     )
 
 
-def check_dd_floor_gaming(run_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Check if any pair's max_drawdown is suspiciously close to the DD floor (5%).
+def check_dd_floor_gaming(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Check if portfolio max_drawdown is suspiciously close to the DD floor (5%).
 
-    The optimizer has a 5% DD floor in the objective function. If a pair's
+    The optimizer has a 5% DD floor in the objective function. If portfolio
     drawdown is exactly at 5.000%, Optuna may have gamed the floor.
 
     Args:
-        run_data: Parsed pipeline.json dict.
+        data: Dict from load_run_data() with portfolio key.
 
     Returns:
-        Check result dict with status PASS / FAIL.
+        Check result dict with status PASS / WARNING / FAIL.
     """
-    per_pair = run_data.get("per_pair_results", {})
-    if not per_pair:
+    portfolio = data.get("portfolio", {})
+    if not portfolio:
         return _check_result(
             "dd_floor_gaming", "WARNING",
-            "No per_pair_results found in pipeline data",
+            "No portfolio metrics found",
         )
 
-    gamed_pairs = []
-    for symbol, metrics in per_pair.items():
-        dd = metrics.get("max_drawdown", 0.0)
-        if abs(dd - _MIN_DD_FLOOR) < _DD_FLOOR_TOL:
-            gamed_pairs.append(f"{symbol}={dd:.4f}")
+    dd = portfolio.get("portfolio_max_drawdown")
+    if dd is None:
+        return _check_result(
+            "dd_floor_gaming", "WARNING",
+            "portfolio_max_drawdown not found in portfolio metrics",
+        )
 
-    if gamed_pairs:
+    if abs(dd - _MIN_DD_FLOOR) < _DD_FLOOR_TOL:
         return _check_result(
             "dd_floor_gaming", "FAIL",
-            f"DD floor gaming detected — max_drawdown within {_DD_FLOOR_TOL} "
-            f"of floor ({_MIN_DD_FLOOR}) for: {', '.join(gamed_pairs)}",
-            value=_MIN_DD_FLOOR,
+            f"DD floor gaming detected — portfolio_max_drawdown={dd:.4f} "
+            f"within {_DD_FLOOR_TOL} of floor ({_MIN_DD_FLOOR})",
+            value=dd,
             threshold=_DD_FLOOR_TOL,
         )
     return _check_result(
         "dd_floor_gaming", "PASS",
         "No DD floor gaming detected",
+        value=dd,
     )
 
 
-def check_equity_reconstruction(run_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Check if sum of per-pair PnL matches the reported total_pnl.
+def check_equity_reconstruction(
+    data: Dict[str, Any],
+    trades: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Check if sum of trade pnl_abs matches the reported portfolio total_pnl.
 
     A significant mismatch indicates a data pipeline bug (double-counting,
     missing pairs, or incorrect aggregation).
 
     Args:
-        run_data: Parsed pipeline.json dict.
+        data: Dict from load_run_data() with portfolio key.
+        trades: List of trade dicts from load_trades().
 
     Returns:
         Check result dict with status PASS / WARNING / FAIL.
     """
-    total_pnl = run_data.get("total_pnl")
-    per_pair = run_data.get("per_pair_results", {})
+    portfolio = data.get("portfolio", {})
+    total_pnl = portfolio.get("total_pnl")
 
     if total_pnl is None:
         return _check_result(
             "equity_reconstruction", "WARNING",
-            "total_pnl not found in pipeline data",
+            "total_pnl not found in portfolio metrics",
         )
-    if not per_pair:
+    if not trades:
         return _check_result(
             "equity_reconstruction", "WARNING",
-            "No per_pair_results found in pipeline data",
+            "No trades found — cannot reconstruct equity",
         )
 
-    pair_sum = sum(m.get("total_pnl", 0.0) for m in per_pair.values())
+    trades_sum = sum(t["pnl_abs"] for t in trades)
 
     if abs(total_pnl) < 1e-9:
         return _check_result(
             "equity_reconstruction", "WARNING",
             "total_pnl is near-zero — cannot compute relative mismatch",
-            value=pair_sum,
+            value=trades_sum,
         )
 
-    mismatch = abs(pair_sum - total_pnl) / abs(total_pnl)
+    mismatch = abs(trades_sum - total_pnl) / abs(total_pnl)
 
     if mismatch > _EQUITY_MISMATCH_FAIL:
         return _check_result(
             "equity_reconstruction", "FAIL",
-            f"Per-pair PnL sum ({pair_sum:.0f}) vs total_pnl ({total_pnl:.0f}) "
+            f"Trades PnL sum ({trades_sum:.0f}) vs total_pnl ({total_pnl:.0f}) "
             f"mismatch = {mismatch:.1%} (>{_EQUITY_MISMATCH_FAIL:.0%})",
             value=mismatch,
             threshold=_EQUITY_MISMATCH_FAIL,
@@ -245,13 +299,13 @@ def check_equity_reconstruction(run_data: Dict[str, Any]) -> Dict[str, Any]:
         )
     return _check_result(
         "equity_reconstruction", "PASS",
-        f"Per-pair PnL sum matches total_pnl within {_EQUITY_MISMATCH_WARN:.0%}",
+        f"Trades PnL sum matches total_pnl within {_EQUITY_MISMATCH_WARN:.0%}",
         value=mismatch,
         threshold=_EQUITY_MISMATCH_FAIL,
     )
 
 
-def check_trade_distribution(trades: List[Dict[str, str]]) -> Dict[str, Any]:
+def check_trade_distribution(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Check if PnL is concentrated in a single calendar quarter.
 
     Highly concentrated PnL (>60% in one quarter) suggests the strategy
@@ -272,11 +326,7 @@ def check_trade_distribution(trades: List[Dict[str, str]]) -> Dict[str, Any]:
     quarter_pnl: Dict[str, float] = {}
     for trade in trades:
         entry_ts = trade.get("entry_ts", "")
-        pnl_str = trade.get("pnl_usd", "0")
-        try:
-            pnl = float(pnl_str)
-        except (ValueError, TypeError):
-            pnl = 0.0
+        pnl = trade["pnl_abs"] if isinstance(trade["pnl_abs"], float) else float(trade.get("pnl_abs", 0))
 
         # Parse quarter from ISO timestamp (YYYY-MM-DD...)
         if len(entry_ts) >= 7:
@@ -344,7 +394,7 @@ def check_trade_distribution(trades: List[Dict[str, str]]) -> Dict[str, Any]:
     )
 
 
-def check_hard_stop_ratio(trades: List[Dict[str, str]]) -> Dict[str, Any]:
+def check_hard_stop_ratio(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Check ratio of hard_stop exits across all trades.
 
     High hard_stop ratio indicates the strategy hits catastrophic stop-losses
@@ -391,71 +441,81 @@ def check_hard_stop_ratio(trades: List[Dict[str, str]]) -> Dict[str, Any]:
 
 
 def check_score_regression(
-    run_data: Dict[str, Any],
-    current_score: Optional[float] = None,
-    prev_score: Optional[float] = None,
+    data: Dict[str, Any],
+    prev_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Check if resilience score regressed compared to a previous run.
+    """Check if key portfolio metrics regressed compared to a previous run.
 
-    When both current_score and prev_score are provided explicitly and
-    current_score <= prev_score, the check is skipped (caller context).
+    Compares portfolio_max_drawdown and sortino_ratio between runs.
+    If no previous run provided, reports current metrics as baseline.
 
     Args:
-        run_data: Parsed pipeline.json dict from current run.
-        current_score: Override current resilience score (optional).
-        prev_score: Previous run's resilience score for comparison (optional).
+        data: Dict from load_run_data() for current run.
+        prev_data: Dict from load_run_data() for previous run (optional).
 
     Returns:
         Check result dict with status PASS / WARNING / FAIL / SKIP.
     """
-    # If both explicit scores provided and current <= prev, skip
-    if current_score is not None and prev_score is not None:
-        if current_score <= prev_score:
-            return _check_result(
-                "score_regression", "SKIP",
-                f"Score regression noted ({current_score:.1f} <= {prev_score:.1f}) "
-                "— skipping per caller context",
-                value=current_score,
-                threshold=prev_score,
-            )
+    portfolio = data.get("portfolio", {})
+    curr_dd = portfolio.get("portfolio_max_drawdown")
+    curr_sortino = portfolio.get("sortino_ratio")
 
-    # Use explicit score or fall back to run_data
-    score = current_score if current_score is not None else run_data.get("resilience_score")
-
-    if score is None:
+    if curr_dd is None and curr_sortino is None:
         return _check_result(
             "score_regression", "WARNING",
-            "resilience_score not found in pipeline data",
+            "No portfolio metrics (drawdown/sortino) found for current run",
         )
 
-    # If no prev_score reference, can't compare — just report current
-    if prev_score is None:
+    if prev_data is None:
+        detail_parts = []
+        if curr_dd is not None:
+            detail_parts.append(f"DD={curr_dd:.3f}")
+        if curr_sortino is not None:
+            detail_parts.append(f"Sortino={curr_sortino:.2f}")
         return _check_result(
             "score_regression", "PASS",
-            f"Current resilience score: {score:.1f} (no previous run to compare)",
-            value=score,
+            f"Current metrics: {', '.join(detail_parts)} (no previous run to compare)",
+            value=curr_sortino if curr_sortino is not None else curr_dd,
         )
 
-    delta = score - prev_score
-    if delta < -5.0:
+    prev_portfolio = prev_data.get("portfolio", {})
+    prev_dd = prev_portfolio.get("portfolio_max_drawdown")
+    prev_sortino = prev_portfolio.get("sortino_ratio")
+
+    issues = []
+    # DD regression: drawdown increased significantly (worse)
+    if curr_dd is not None and prev_dd is not None:
+        dd_delta = curr_dd - prev_dd
+        if dd_delta > 0.05:  # DD worsened by more than 5 percentage points
+            issues.append(f"DD worsened {dd_delta:+.3f} ({prev_dd:.3f} → {curr_dd:.3f})")
+
+    # Sortino regression: sortino dropped significantly
+    if curr_sortino is not None and prev_sortino is not None:
+        sortino_delta = curr_sortino - prev_sortino
+        if sortino_delta < -1.0:  # Sortino dropped by more than 1.0
+            issues.append(
+                f"Sortino regressed {sortino_delta:+.2f} ({prev_sortino:.2f} → {curr_sortino:.2f})"
+            )
+
+    if issues:
         return _check_result(
             "score_regression", "FAIL",
-            f"Score regressed {delta:+.1f} ({prev_score:.1f} → {score:.1f})",
-            value=score,
-            threshold=prev_score,
+            "Metric regression detected: " + "; ".join(issues),
+            value=curr_sortino if curr_sortino is not None else curr_dd,
         )
-    if delta < 0:
-        return _check_result(
-            "score_regression", "WARNING",
-            f"Minor score decrease {delta:+.1f} ({prev_score:.1f} → {score:.1f})",
-            value=score,
-            threshold=prev_score,
-        )
+
+    detail_parts = []
+    if curr_sortino is not None and prev_sortino is not None:
+        delta = curr_sortino - prev_sortino
+        detail_parts.append(f"Sortino {delta:+.2f} ({prev_sortino:.2f} → {curr_sortino:.2f})")
+    if curr_dd is not None and prev_dd is not None:
+        delta = curr_dd - prev_dd
+        detail_parts.append(f"DD {delta:+.3f} ({prev_dd:.3f} → {curr_dd:.3f})")
+
     return _check_result(
         "score_regression", "PASS",
-        f"Score improved or stable {delta:+.1f} ({prev_score:.1f} → {score:.1f})",
-        value=score,
-        threshold=prev_score,
+        "Metrics stable or improved" + (": " + ", ".join(detail_parts) if detail_parts else ""),
+        value=curr_sortino if curr_sortino is not None else curr_dd,
     )
 
 
@@ -467,8 +527,8 @@ def quick(
 ) -> List[Dict[str, Any]]:
     """Run all quick-mode deterministic checks on a run directory.
 
-    Loads pipeline.json and trades.csv, then executes all 6 checks.
-    Runs in <1s from local artifacts — no network, no LLM.
+    Loads pipeline_result.json, portfolio_metrics.json, and per-pair trade CSVs,
+    then executes all 6 checks. Runs in <1s from local artifacts — no network, no LLM.
 
     Args:
         run_dir: Path to the current run directory.
@@ -477,47 +537,66 @@ def quick(
     Returns:
         List of check result dicts, one per check.
     """
-    run_data = load_run_data(run_dir)
-    trades = load_trades(run_dir)
+    data = load_run_data(Path(run_dir))
+    trades = load_trades(Path(run_dir))
 
-    prev_score: Optional[float] = None
+    prev_data: Optional[Dict[str, Any]] = None
     if prev_run_dir is not None:
         try:
-            prev_data = load_run_data(prev_run_dir)
-            prev_score = prev_data.get("resilience_score")
+            prev_data = load_run_data(Path(prev_run_dir))
         except FileNotFoundError:
             pass
 
-    results = [
-        check_wf_degradation(run_data),
-        check_dd_floor_gaming(run_data),
-        check_equity_reconstruction(run_data),
+    return [
+        check_wf_degradation(data),
+        check_dd_floor_gaming(data),
+        check_equity_reconstruction(data, trades),
         check_trade_distribution(trades),
         check_hard_stop_ratio(trades),
-        check_score_regression(run_data, prev_score=prev_score),
+        check_score_regression(data, prev_data=prev_data),
     ]
-    return results
 
 
 def full(
     run_dir: Path,
+    history: Optional[List[Dict[str, Any]]] = None,
+    git_diff: str = "",
     prev_run_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Full mode — reserved for future LLM-assisted deep analysis.
-
-    Currently returns quick() results plus a placeholder for LLM context.
+    """Full mode — assembles LLM context for deep analysis.
 
     Args:
         run_dir: Path to the current run directory.
-        prev_run_dir: Optional path to previous run.
+        history: Optional list of previous iteration summaries.
+        git_diff: Optional git diff string for this iteration.
+        prev_run_dir: Optional path to previous run for regression check.
 
     Returns:
-        Dict with 'quick_checks' and 'llm_context' (placeholder).
+        Dict with metrics, prev_metrics, history_summary, diff_summary, quick_results.
     """
-    quick_results = quick(run_dir, prev_run_dir=prev_run_dir)
+    data = load_run_data(Path(run_dir))
+    trades = load_trades(Path(run_dir))
+
+    prev_data: Optional[Dict[str, Any]] = None
+    if prev_run_dir is not None:
+        try:
+            prev_data = load_run_data(Path(prev_run_dir))
+        except FileNotFoundError:
+            pass
+
+    quick_results = quick(str(run_dir), prev_run_dir=str(prev_run_dir) if prev_run_dir else None)
+    metrics = _extract_metrics(data)
+    prev_metrics = _extract_metrics(prev_data) if prev_data else None
+
     return {
-        "quick_checks": quick_results,
-        "llm_context": None,  # Reserved for Task 5
+        "metrics": metrics,
+        "prev_metrics": prev_metrics,
+        "history_summary": _format_history_summary(history or []),
+        "diff_summary": git_diff,
+        "quick_results": {
+            "pass": all(c["status"] != "FAIL" for c in quick_results),
+            "checks": quick_results,
+        },
     }
 
 
@@ -561,10 +640,11 @@ def _full_result_to_output(
     git_diff: str,
 ) -> Dict[str, Any]:
     """Convert full() results to CLI output format."""
-    quick_results = result.get("quick_checks", [])
-    fails = [r for r in quick_results if r["status"] == "FAIL"]
-    warnings = [r for r in quick_results if r["status"] == "WARNING"]
-    passed = len([r for r in quick_results if r["status"] == "PASS"])
+    quick_results_wrapper = result.get("quick_results", {})
+    quick_checks = quick_results_wrapper.get("checks", [])
+    fails = [r for r in quick_checks if r["status"] == "FAIL"]
+    warnings = [r for r in quick_checks if r["status"] == "WARNING"]
+    passed = len([r for r in quick_checks if r["status"] == "PASS"])
 
     return {
         "pass": len(fails) == 0,
@@ -573,8 +653,8 @@ def _full_result_to_output(
             "warn": len(warnings),
             "fail": len(fails),
         },
-        "quick_checks": quick_results,
-        "llm_context": result.get("llm_context"),
+        "quick_checks": quick_checks,
+        "metrics": result.get("metrics"),
         "history_entries": len(history),
         "git_diff_chars": len(git_diff),
     }
@@ -596,7 +676,7 @@ def main() -> None:
     quick_parser.add_argument(
         "--run-dir",
         required=True,
-        help="Path to the run directory (must contain evaluation/pipeline.json)",
+        help="Path to the run directory (must contain pipeline_result.json)",
     )
     quick_parser.add_argument(
         "--history",
@@ -617,7 +697,7 @@ def main() -> None:
     full_parser.add_argument(
         "--run-dir",
         required=True,
-        help="Path to the run directory (must contain evaluation/pipeline.json)",
+        help="Path to the run directory (must contain pipeline_result.json)",
     )
     full_parser.add_argument(
         "--history",
@@ -649,7 +729,7 @@ def main() -> None:
     elif args.mode == "full":
         git_diff_path = Path(args.git_diff_file)
         git_diff = git_diff_path.read_text(encoding="utf-8") if git_diff_path.exists() else ""
-        result = full(run_dir, prev_run_dir=prev_run_dir)
+        result = full(run_dir, history=history, git_diff=git_diff, prev_run_dir=prev_run_dir)
         output = _full_result_to_output(result, history, git_diff)
         print(json.dumps(output, indent=2))
 
