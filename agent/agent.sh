@@ -616,6 +616,30 @@ main() {
         local val_dir
         val_dir=$(find_latest_results)
 
+        # ── Critic quick check (post-validation) ──
+        log_info "Running critic quick check..."
+        local best_run
+        best_run=$(get_best_run)
+        local critic_args="--run-dir ${val_dir} --history agent/history.json"
+        if [[ -n "${best_run}" ]]; then
+            critic_args="${critic_args} --prev-run-dir ${best_run}"
+        fi
+        local critic_result critic_pass
+        critic_result=$(python3 agent/critic.py quick ${critic_args} 2>&1)
+        critic_pass=$(echo "$critic_result" | python3 -c "import json,sys; print(json.load(sys.stdin)['pass'])" 2>/dev/null || echo "error")
+        if [[ "$critic_pass" == "False" ]]; then
+            log_warn "Critic quick check FAILED — rolling back"
+            rollback_to_best
+            append_history "{\"iteration\":$iter,\"level\":\"$level\",\"change_description\":\"$change_desc\",\"result\":\"rollback\",\"reasoning\":\"critic quick check failed\"}"
+            set_state "consecutive_no_improvement" "$(($(get_no_improvement) + 1))"
+            set_state "total_rollbacks" "$(($(get_state total_rollbacks 0) + 1))"
+            continue
+        elif [[ "$critic_pass" == "error" ]]; then
+            log_warn "Critic quick check errored — continuing without critic"
+        else
+            log_info "Critic quick check PASSED"
+        fi
+
         # ── Step 3: Evaluate validation ──
         set_state "phase" "evaluating_validation"
         if ! call_claude "evaluate_val" "VAL_RUN_DIR=$val_dir"; then
@@ -654,9 +678,36 @@ main() {
         local full_dir
         full_dir=$(find_latest_results)
 
+        # ── Build forensics context for full run ──
+        local forensics_context_file="/tmp/mqe-agent-forensics-${iter}.md"
+        local git_diff_file="/tmp/mqe-agent-diff-${iter}.diff"
+        cd "$MQE_DIR"
+        git diff agent/best HEAD -- > "$git_diff_file" 2>/dev/null || true
+        python3 agent/critic.py full \
+            --run-dir "${full_dir}" \
+            --history agent/history.json \
+            --git-diff-file "$git_diff_file" \
+            ${best_run:+--prev-run-dir "${best_run}"} \
+            > /tmp/mqe-critic-full-${iter}.json 2>/dev/null || true
+        # Render forensics template with critic output
+        if [[ -f /tmp/mqe-critic-full-${iter}.json ]]; then
+            python3 - <<PYEOF
+import json
+from pathlib import Path
+
+critic_data = json.load(open('/tmp/mqe-critic-full-${iter}.json'))
+template = Path('agent/critic_prompt.md').read_text()
+forensics_json = json.dumps(critic_data, indent=2)
+rendered = template.replace('{{FORENSICS_JSON}}', forensics_json)
+Path('$forensics_context_file').write_text(rendered)
+PYEOF
+        else
+            printf '' > "$forensics_context_file"
+        fi
+
         # ── Step 5: Evaluate full run ──
         set_state "phase" "evaluating_full"
-        if ! call_claude "evaluate_full" "FULL_RUN_DIR=$full_dir"; then
+        if ! call_claude "evaluate_full" "FULL_RUN_DIR=$full_dir" "FORENSICS_CONTEXT_FILE=$forensics_context_file"; then
             log_error "Claude full evaluation failed. Rolling back."
             rollback_to_best
             continue
@@ -666,6 +717,22 @@ main() {
         full_action=$(read_decision "action" "rollback")
         local full_score
         full_score=$(compute_score "$full_dir" | python3 -c "import json,sys; print(json.load(sys.stdin)['score'])")
+
+        # ── Forensics critical_blocks gate ──
+        local forensics_critical
+        forensics_critical=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$AGENT_DIR/decision.json'))
+    blocks = d.get('forensics', {}).get('critical_blocks', [])
+    print(len(blocks))
+except Exception:
+    print(0)
+" 2>/dev/null || echo "0")
+        if [[ "$forensics_critical" -gt 0 && "$full_action" == "promote" ]]; then
+            log_warn "Forensics critical_blocks detected ($forensics_critical) — blocking promote, rolling back"
+            full_action="rollback"
+        fi
 
         set_state "phase" "decided"
 
