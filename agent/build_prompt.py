@@ -115,11 +115,19 @@ def build_prompt(task_type: str, extra_vars: Dict[str, str] = None) -> str:
         "{{HISTORY_COUNT}}": str(min(10, len(json.loads(HISTORY_PATH.read_text())) if HISTORY_PATH.exists() else 0)),
         "{{HISTORY}}": history_text,
         "{{LESSONS_LEARNED}}": lessons_text,
+        "{{FORENSICS_CONTEXT}}": "",
     }
 
     if extra_vars:
         for key, val in extra_vars.items():
             replacements[f"{{{{{key}}}}}"] = val
+
+    # Handle FORENSICS_CONTEXT_FILE — read file content and inject
+    forensics_file = extra_vars.get("FORENSICS_CONTEXT_FILE") if extra_vars else None
+    if forensics_file:
+        forensics_path = Path(forensics_file)
+        if forensics_path.exists():
+            replacements["{{FORENSICS_CONTEXT}}"] = forensics_path.read_text(encoding="utf-8")
 
     result = template
     for placeholder, value in replacements.items():
