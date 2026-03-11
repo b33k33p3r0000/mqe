@@ -377,6 +377,21 @@ def run_final_evaluation(
         returns_dict[symbol] = close.pct_change().dropna()
     corr_matrix = compute_pairwise_correlation(returns_dict)
 
+    # Save correlation matrix for HTML report
+    symbols_list = list(corr_matrix.keys())
+    corr_json = {
+        "symbols": symbols_list,
+        "matrix": [
+            [corr_matrix.get(a, {}).get(b, 1.0 if a == b else 0.0)
+             for b in symbols_list]
+            for a in symbols_list
+        ],
+        "corr_gate_threshold": stage2_result.get("portfolio_params", {}).get(
+            "corr_gate_threshold", 0.0
+        ),
+    }
+    save_json(eval_dir / "corr_matrix.json", corr_json)
+
     sim = PortfolioSimulator(
         pair_data=all_data,
         pair_signals=pair_signals,
