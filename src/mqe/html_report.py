@@ -184,6 +184,91 @@ tr:hover td {
     color: var(--accent-orange);
 }
 
+/* Grid layouts */
+.grid-3col {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+@media (max-width: 900px) {
+    .grid-3col {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .grid-3col {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Pill badges */
+.pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    margin: 4px 4px 4px 0;
+}
+
+.pill-green {
+    background: rgba(195, 232, 141, 0.15);
+    color: var(--accent-green);
+}
+
+.pill-yellow {
+    background: rgba(255, 199, 119, 0.15);
+    color: var(--accent-yellow);
+}
+
+.pill-red {
+    background: rgba(255, 117, 127, 0.15);
+    color: var(--accent-red);
+}
+
+/* Tier-X class */
+.tier-x {
+    color: var(--accent-red);
+}
+
+/* WF metric cards */
+.wf-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.wf-card h3 {
+    color: var(--accent-cyan);
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+
+.wf-metric-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--text-muted);
+}
+
+.wf-metric-row:last-child {
+    border-bottom: none;
+}
+
+.wf-metric-label {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.wf-metric-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
 /* No-data placeholder */
 .no-data {
     background: var(--bg-secondary);
@@ -417,30 +502,280 @@ def _render_concurrent_positions(
 </div>"""
 
 
+def _build_equity_curve_from_trades(
+    trades: list,
+    start_equity: float = 100_000.0,
+) -> list:
+    """Build equity curve from trade list."""
+    if not trades:
+        return []
+    equity = start_equity
+    curve = [equity]
+    for t in sorted(trades, key=lambda x: x.get("exit_bar", 0)):
+        equity += t.get("pnl_abs", 0)
+        curve.append(equity)
+    return curve
+
+
 def _render_per_pair_table(
     pipeline_result: Dict[str, Any],
     eval_result: Dict[str, Any],
 ) -> str:
-    return '<div class="no-data">Per-Pair Table placeholder</div>'
+    per_pair = eval_result.get("per_pair_metrics", {})
+    if not per_pair:
+        return '<div class="no-data">No per-pair data available</div>'
+
+    tiers = pipeline_result.get("tier_assignments", {})
+    # Build verdict lookup from analysis if available
+    analysis = pipeline_result.get("analysis", {})
+    verdict_list = analysis.get("per_pair", []) if isinstance(analysis, dict) else []
+    verdict_map: Dict[str, str] = {}
+    if isinstance(verdict_list, list):
+        for entry in verdict_list:
+            if isinstance(entry, dict):
+                verdict_map[entry.get("symbol", "")] = entry.get("verdict", "—")
+
+    headers = ["Symbol", "Tier", "Verdict", "Trades/yr", "Sharpe", "Calmar", "Max DD%", "PnL%", "Win Rate", "PF"]
+    header_row = "".join(f"<th>{h}</th>" for h in headers)
+
+    rows = []
+    for symbol in sorted(per_pair.keys()):
+        m = per_pair[symbol]
+        tier_info = tiers.get(symbol, {})
+        tier = tier_info.get("tier", "—") if isinstance(tier_info, dict) else str(tier_info)
+        tier_cls = f"tier-{tier.lower()}" if tier in ("A", "B", "C", "S", "X") else ""
+
+        verdict = verdict_map.get(symbol, "—")
+        verdict_lower = verdict.lower()
+        if verdict_lower == "pass":
+            verdict_cls = "verdict-pass"
+        elif verdict_lower == "warn":
+            verdict_cls = "verdict-warn"
+        elif verdict_lower == "fail":
+            verdict_cls = "verdict-fail"
+        else:
+            verdict_cls = ""
+
+        trades_yr = m.get("trades_per_year", 0)
+        sharpe = m.get("sharpe_ratio_equity_based", 0)
+        calmar = m.get("calmar_ratio", 0)
+        max_dd = abs(m.get("max_drawdown", 0)) * 100
+        pnl_pct = m.get("total_pnl_pct", 0)
+        win_rate = m.get("win_rate", 0) * 100
+        pf = m.get("profit_factor", 0)
+
+        row = (
+            f"<tr>"
+            f"<td>{symbol}</td>"
+            f'<td class="{tier_cls}">{tier}</td>'
+            f'<td class="{verdict_cls}">{verdict}</td>'
+            f"<td>{trades_yr:.0f}</td>"
+            f"<td>{sharpe:.2f}</td>"
+            f"<td>{calmar:.2f}</td>"
+            f"<td>-{max_dd:.1f}%</td>"
+            f"<td>{pnl_pct:+.1f}%</td>"
+            f"<td>{win_rate:.1f}%</td>"
+            f"<td>{pf:.2f}</td>"
+            f"</tr>"
+        )
+        rows.append(row)
+
+    return f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
 
 
 def _render_per_pair_equity_curves(
     pair_equity_curves: Dict[str, List[float]],
     timestamps: List[str],
 ) -> str:
-    return '<div class="no-data">Per-Pair Equity Curves placeholder</div>'
+    if not pair_equity_curves:
+        return '<div class="no-data">No per-pair equity data available</div>'
+
+    charts = []
+    for symbol in sorted(pair_equity_curves.keys()):
+        curve = pair_equity_curves[symbol]
+        if not curve:
+            continue
+
+        safe_id = symbol.replace("/", "").replace(" ", "")
+        div_id = f"pair-equity-{safe_id}"
+        x_data = timestamps[:len(curve)] if timestamps else list(range(len(curve)))
+
+        # Determine trade markers if curve was built from trades
+        # Curve values: compute per-bar PnL for coloring
+        win_x = []
+        win_y = []
+        loss_x = []
+        loss_y = []
+        for i in range(1, len(curve)):
+            pnl = curve[i] - curve[i - 1]
+            if pnl > 0:
+                win_x.append(x_data[i] if i < len(x_data) else i)
+                win_y.append(curve[i])
+            elif pnl < 0:
+                loss_x.append(x_data[i] if i < len(x_data) else i)
+                loss_y.append(curve[i])
+
+        x_json = json.dumps(x_data)
+        eq_json = json.dumps(curve)
+        win_x_json = json.dumps(win_x)
+        win_y_json = json.dumps(win_y)
+        loss_x_json = json.dumps(loss_x)
+        loss_y_json = json.dumps(loss_y)
+
+        chart_html = f"""<div class="chart-container">
+<div id="{div_id}" style="width:100%;height:280px;"></div>
+<script>
+(function() {{
+  var traces = [
+    {{
+      x: {x_json}, y: {eq_json}, type: 'scatter', mode: 'lines',
+      name: 'Equity', line: {{color: '#86e1fc', width: 1.5}}
+    }},
+    {{
+      x: {win_x_json}, y: {win_y_json}, type: 'scatter', mode: 'markers',
+      name: 'Win', marker: {{color: '#c3e88d', size: 4}}
+    }},
+    {{
+      x: {loss_x_json}, y: {loss_y_json}, type: 'scatter', mode: 'markers',
+      name: 'Loss', marker: {{color: '#ff757f', size: 4}}
+    }}
+  ];
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 10}},
+    title: {{text: '{symbol}', font: {{size: 12, color: '#c099ff'}}}},
+    margin: {{l: 50, r: 20, t: 30, b: 30}},
+    showlegend: false,
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{gridcolor: '#3b4261', showgrid: true}}
+  }};
+  Plotly.newPlot('{div_id}', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+        charts.append(chart_html)
+
+    if not charts:
+        return '<div class="no-data">No per-pair equity data available</div>'
+
+    return f'<div class="grid-3col">{"".join(charts)}</div>'
 
 
 def _render_tier_table(analysis: Dict[str, Any]) -> str:
-    return '<div class="no-data">Tier Table placeholder</div>'
+    tier_data = analysis.get("tier_assignments", {})
+    if not tier_data:
+        return '<div class="no-data">No tier assignment data available</div>'
+
+    headers = ["Symbol", "Tier", "Multiplier", "OOS Sharpe", "Degradation", "Consistency", "Worst Sharpe"]
+    header_row = "".join(f"<th>{h}</th>" for h in headers)
+
+    rows = []
+    for symbol in sorted(tier_data.keys()):
+        t = tier_data[symbol]
+        tier = t.get("tier", "—")
+        tier_cls = f"tier-{tier.lower()}" if tier in ("A", "B", "C", "S", "X") else ""
+        multiplier = t.get("multiplier", 0)
+        sharpe = t.get("sharpe", 0)
+        degradation = t.get("degradation", 0)
+        consistency = t.get("consistency", 0)
+        worst = t.get("worst_sharpe", 0)
+
+        row = (
+            f"<tr>"
+            f"<td>{symbol}</td>"
+            f'<td class="{tier_cls}">{tier}</td>'
+            f"<td>{multiplier:.2f}</td>"
+            f"<td>{sharpe:.2f}</td>"
+            f"<td>{degradation:.2f}</td>"
+            f"<td>{consistency:.2f}</td>"
+            f"<td>{worst:.2f}</td>"
+            f"</tr>"
+        )
+        rows.append(row)
+
+    return f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
 
 
 def _render_wf_evaluation(eval_result: Dict[str, Any]) -> str:
-    return '<div class="no-data">Walk-Forward Evaluation placeholder</div>'
+    wf_metrics = eval_result.get("wf_eval_metrics", {})
+    if not wf_metrics:
+        return '<div class="no-data">No walk-forward evaluation data available</div>'
+
+    cards = []
+    for symbol in sorted(wf_metrics.keys()):
+        m = wf_metrics[symbol]
+        median_sharpe = m.get("wf_sharpe_median", 0)
+        std_sharpe = m.get("wf_sharpe_std", 0)
+        worst_sharpe = m.get("wf_worst_sharpe", 0)
+        degradation = m.get("degradation_ratio", 0)
+        n_windows = m.get("n_windows", 0)
+
+        # Color degradation: < 0.5 = green, 0.5-0.8 = yellow, > 0.8 = red
+        if degradation < 0.5:
+            deg_cls = "verdict-pass"
+        elif degradation < 0.8:
+            deg_cls = "verdict-warn"
+        else:
+            deg_cls = "verdict-fail"
+
+        card = f"""<div class="wf-card">
+<h3>{symbol}</h3>
+<div class="wf-metric-row"><span class="wf-metric-label">Sharpe (median)</span><span class="wf-metric-value">{median_sharpe:.2f}</span></div>
+<div class="wf-metric-row"><span class="wf-metric-label">Sharpe (std)</span><span class="wf-metric-value">{std_sharpe:.2f}</span></div>
+<div class="wf-metric-row"><span class="wf-metric-label">Worst Sharpe</span><span class="wf-metric-value">{worst_sharpe:.2f}</span></div>
+<div class="wf-metric-row"><span class="wf-metric-label">Degradation</span><span class="wf-metric-value {deg_cls}">{degradation:.2f}</span></div>
+<div class="wf-metric-row"><span class="wf-metric-label">Windows</span><span class="wf-metric-value">{n_windows}</span></div>
+</div>"""
+        cards.append(card)
+
+    return f'<div class="grid-3col">{"".join(cards)}</div>'
 
 
 def _render_s1_params_table(pipeline_result: Dict[str, Any]) -> str:
-    return '<div class="no-data">S1 Params Table placeholder</div>'
+    s1_results = pipeline_result.get("stage1_results", {})
+    if not s1_results:
+        return '<div class="no-data">No S1 parameters available</div>'
+
+    param_names = [
+        "macd_fast", "macd_slow", "macd_signal",
+        "rsi_period", "rsi_lower", "rsi_upper", "rsi_lookback",
+        "trend_tf", "adx_threshold", "trail_mult", "hard_stop_mult", "max_hold_bars",
+    ]
+    symbols = sorted(s1_results.keys())
+
+    # Table header
+    header_row = "<th>Parameter</th>" + "".join(f"<th>{s}</th>" for s in symbols)
+
+    # Table rows
+    rows = []
+    for param in param_names:
+        cells = f"<td>{param}</td>"
+        for sym in symbols:
+            val = s1_results[sym].get(param, "—")
+            if isinstance(val, float):
+                cells += f"<td>{val:.4g}</td>"
+            else:
+                cells += f"<td>{val}</td>"
+        rows.append(f"<tr>{cells}</tr>")
+
+    table = f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+
+    # Fixed params as pill badges
+    fixed_params = ["allow_flip", "trend_strict"]
+    pills = []
+    for fp in fixed_params:
+        # Try to get from first symbol
+        for sym in symbols:
+            val = s1_results[sym].get(fp)
+            if val is not None:
+                pills.append(f'<span class="pill pill-green">{fp}: {val}</span>')
+                break
+        else:
+            pills.append(f'<span class="pill pill-yellow">{fp}: —</span>')
+
+    pill_html = f'<div style="margin-bottom:24px;">{"".join(pills)}</div>' if pills else ""
+
+    return table + pill_html
 
 
 def _render_s1_bullet_chart(pipeline_result: Dict[str, Any]) -> str:
