@@ -9,3 +9,11 @@ results/
 *.db
 logs/
 .worktrees/
+
+# Agent runtime files
+agent/state.json
+agent/history.json
+agent/decision.json
+agent/agent.pid
+agent/logs/*.log
+agent/FINAL_REPORT.md
