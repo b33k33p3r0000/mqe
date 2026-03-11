@@ -91,6 +91,8 @@ Requires: pytest must pass before running
 - Delete previous run results
 - Make more than 1 change per iteration
 
+{{FORENSICS_CONTEXT}}
+
 ## Output Format
 
 You MUST write a file `agent/decision.json` with this exact structure:
