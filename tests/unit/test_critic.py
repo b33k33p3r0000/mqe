@@ -8,8 +8,14 @@ import pytest
 from pathlib import Path
 from typing import Dict, Any, List
 
-# ── Path setup (will be used when critic.py exists) ──────────────────
-# Imports from critic are added in Task 2
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "agent"))
+from critic import (
+    load_run_data, load_trades,
+    check_wf_degradation, check_dd_floor_gaming,
+    check_equity_reconstruction, check_trade_distribution,
+    check_hard_stop_ratio, check_score_regression,
+    quick, full,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -324,3 +330,45 @@ def score_regression_runs(tmp_path):
     _write_csv(eval_dir_curr / "trades.csv", rows)
 
     return {"prev": prev_dir, "curr": curr_dir}
+
+
+# ── Task 2: Data Loading Tests ────────────────────────────────────────
+
+class TestDataLoading:
+    def test_load_run_data_returns_dict(self, clean_run):
+        data = load_run_data(clean_run)
+        assert isinstance(data, dict)
+
+    def test_load_run_data_has_symbols(self, clean_run):
+        data = load_run_data(clean_run)
+        assert "symbols" in data
+        assert data["symbols"] == ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+
+    def test_load_run_data_has_total_pnl(self, clean_run):
+        data = load_run_data(clean_run)
+        assert "total_pnl" in data
+        assert data["total_pnl"] == 48000.0
+
+    def test_load_run_data_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            load_run_data(tmp_path / "nonexistent_run")
+
+    def test_load_trades_returns_list(self, clean_run):
+        trades = load_trades(clean_run)
+        assert isinstance(trades, list)
+
+    def test_load_trades_has_correct_count(self, clean_run):
+        trades = load_trades(clean_run)
+        # 3 pairs × 8 trades = 24
+        assert len(trades) == 24
+
+    def test_load_trades_row_has_required_fields(self, clean_run):
+        trades = load_trades(clean_run)
+        required = {"symbol", "entry_ts", "exit_ts", "direction",
+                    "entry_price", "exit_price", "pnl_usd", "reason"}
+        for trade in trades:
+            assert required.issubset(set(trade.keys()))
+
+    def test_load_trades_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            load_trades(tmp_path / "nonexistent_run")
