@@ -587,3 +587,88 @@ class TestCheckScoreRegression:
         result = check_score_regression(data, prev_score=80.0)
         # -2.0 delta → WARNING (< 0 but > -5)
         assert result["status"] == "WARNING"
+
+
+# ── Task 4: Quick() Orchestrator Tests ───────────────────────────────
+
+class TestQuick:
+    def test_returns_list_of_dicts(self, clean_run):
+        results = quick(clean_run)
+        assert isinstance(results, list)
+        assert all(isinstance(r, dict) for r in results)
+
+    def test_returns_six_checks(self, clean_run):
+        results = quick(clean_run)
+        assert len(results) == 6
+
+    def test_all_checks_have_required_fields(self, clean_run):
+        results = quick(clean_run)
+        for r in results:
+            assert "check" in r
+            assert "status" in r
+            assert "message" in r
+
+    def test_check_names_are_correct(self, clean_run):
+        results = quick(clean_run)
+        names = {r["check"] for r in results}
+        expected = {
+            "wf_degradation",
+            "dd_floor_gaming",
+            "equity_reconstruction",
+            "trade_distribution",
+            "hard_stop_ratio",
+            "score_regression",
+        }
+        assert names == expected
+
+    def test_clean_run_all_pass(self, clean_run):
+        results = quick(clean_run)
+        statuses = {r["status"] for r in results}
+        # Only PASS/WARNING expected — no FAIL for clean run
+        assert "FAIL" not in statuses
+
+    def test_overfit_run_has_fail(self, overfit_run):
+        results = quick(overfit_run)
+        statuses = [r["status"] for r in results]
+        assert "FAIL" in statuses
+
+    def test_with_prev_run_dir(self, score_regression_runs):
+        curr_dir = score_regression_runs["curr"]
+        prev_dir = score_regression_runs["prev"]
+        results = quick(curr_dir, prev_run_dir=prev_dir)
+        assert len(results) == 6
+        # Score regression: 71.0 vs 82.5 → should detect regression
+        score_check = next(r for r in results if r["check"] == "score_regression")
+        assert score_check["status"] == "FAIL"
+
+    def test_without_prev_run_dir(self, clean_run):
+        results = quick(clean_run)
+        score_check = next(r for r in results if r["check"] == "score_regression")
+        # clean_run has no resilience_score → WARNING (score not found)
+        assert score_check["status"] in ("PASS", "WARNING")
+
+    def test_full_returns_quick_checks(self, clean_run):
+        result = full(clean_run)
+        assert "quick_checks" in result
+        assert len(result["quick_checks"]) == 6
+
+    def test_full_has_llm_context_placeholder(self, clean_run):
+        result = full(clean_run)
+        assert "llm_context" in result
+        # Reserved — currently None
+        assert result["llm_context"] is None
+
+    def test_dd_gaming_run_has_fail(self, dd_floor_gaming_run):
+        results = quick(dd_floor_gaming_run)
+        dd_check = next(r for r in results if r["check"] == "dd_floor_gaming")
+        assert dd_check["status"] == "FAIL"
+
+    def test_equity_mismatch_run_has_fail(self, equity_mismatch_run):
+        results = quick(equity_mismatch_run)
+        eq_check = next(r for r in results if r["check"] == "equity_reconstruction")
+        assert eq_check["status"] == "FAIL"
+
+    def test_high_hard_stop_run_has_fail(self, high_hard_stop_run):
+        results = quick(high_hard_stop_run)
+        hs_check = next(r for r in results if r["check"] == "hard_stop_ratio")
+        assert hs_check["status"] == "FAIL"
