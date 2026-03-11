@@ -448,6 +448,78 @@ class ProgressCallback:
             logger.debug("Failed to write progress for %s", self.symbol)
 
 
+# ─── TRIAL EXPORT HELPERS ───────────────────────────────────────────────────
+
+
+def extract_top_trials(
+    study: optuna.Study,
+    max_trials: int = 200,
+) -> list[dict[str, Any]]:
+    """Extract top N trials sorted by objective value (descending)."""
+    completed = [
+        t for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE
+    ]
+    completed.sort(key=lambda t: t.value, reverse=True)
+    top = completed[:max_trials]
+
+    result = []
+    for t in top:
+        result.append({
+            "number": t.number,
+            "objective": round(t.value, 6),
+            "params": {k: round(v, 6) if isinstance(v, float) else v
+                       for k, v in t.params.items()},
+            "metrics": {
+                "sharpe_equity": t.user_attrs.get("sharpe_equity", 0.0),
+                "max_drawdown": t.user_attrs.get("max_drawdown", 0.0),
+                "total_pnl_pct": t.user_attrs.get("total_pnl_pct", 0.0),
+                "trades_per_year": t.user_attrs.get("trades_per_year", 0.0),
+            },
+        })
+    return result
+
+
+def extract_trial_history(
+    study: optuna.Study,
+    max_points: int = 2000,
+) -> dict[str, list]:
+    """Extract trial progression for optimization history chart.
+    Samples evenly if total trials exceed max_points.
+    """
+    trials = study.trials
+    n = len(trials)
+
+    numbers = []
+    values = []
+    for t in trials:
+        numbers.append(t.number)
+        if t.state == optuna.trial.TrialState.COMPLETE and t.value is not None:
+            values.append(round(t.value, 6))
+        else:
+            values.append(0.0)
+
+    best_so_far = []
+    running_best = float("-inf")
+    for v in values:
+        running_best = max(running_best, v)
+        best_so_far.append(round(running_best, 6))
+
+    if n > max_points:
+        indices = list(range(0, n, n // max_points))[:max_points]
+        if indices[-1] != n - 1:
+            indices.append(n - 1)
+        numbers = [numbers[i] for i in indices]
+        values = [values[i] for i in indices]
+        best_so_far = [best_so_far[i] for i in indices]
+
+    return {
+        "trial_numbers": numbers,
+        "objective_values": values,
+        "best_so_far": best_so_far,
+    }
+
+
 # ─── RUN STAGE 1 PER PAIR ───────────────────────────────────────────────────
 
 
@@ -544,6 +616,31 @@ def run_stage1_pair(
         show_progress_bar=False,
         callbacks=callbacks,
     )
+
+    # ── Export trial data for HTML report ────────────────────────────
+    if output_dir is not None:
+        safe_sym = symbol.replace("/", "_")
+        s1_dir = Path(output_dir) / "stage1"
+        s1_dir.mkdir(parents=True, exist_ok=True)
+
+        top_trials = extract_top_trials(study, max_trials=200)
+        top_trials_path = s1_dir / f"{safe_sym}_top_trials.json"
+        top_trials_data = {
+            "symbol": symbol,
+            "n_trials_total": len(study.trials),
+            "trials": top_trials,
+        }
+        top_trials_path.write_text(
+            json.dumps(top_trials_data, indent=2), encoding="utf-8"
+        )
+
+        history = extract_trial_history(study, max_points=2000)
+        history_path = s1_dir / f"{safe_sym}_history.json"
+        history_data = {"symbol": symbol, **history}
+        history_path.write_text(
+            json.dumps(history_data, indent=2), encoding="utf-8"
+        )
+        logger.info("Exported trial data for %s", symbol)
 
     # Collect results
     completed_trials = len([
