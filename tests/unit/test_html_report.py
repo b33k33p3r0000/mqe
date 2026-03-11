@@ -13,6 +13,12 @@ from mqe.html_report import (
     _render_tier_table,
     _render_wf_evaluation,
     _render_s1_params_table,
+    _render_s1_bullet_chart,
+    _render_s1_top_trials,
+    _render_s1_optimization_history,
+    _render_s2_params,
+    _render_pareto_front,
+    _render_s2_optimization_history,
 )
 
 
@@ -569,3 +575,299 @@ def test_s1_params_table_values_present(s1_pipeline_result):
     html = _render_s1_params_table(s1_pipeline_result)
     assert "2.5" in html   # macd_fast for BTC
     assert "4h" in html    # trend_tf for BTC
+
+
+# ─── S1 Bullet Chart (Task 17) ───
+
+
+def test_s1_bullet_chart_has_plotly(s1_pipeline_result):
+    html = _render_s1_bullet_chart(s1_pipeline_result)
+    assert "Plotly.newPlot" in html
+
+
+def test_s1_bullet_chart_param_names(s1_pipeline_result):
+    html = _render_s1_bullet_chart(s1_pipeline_result)
+    for param in ["macd_fast", "macd_slow", "rsi_period", "rsi_lower", "rsi_upper"]:
+        assert param in html
+
+
+def test_s1_bullet_chart_empty_data():
+    html = _render_s1_bullet_chart({})
+    assert "no-data" in html
+
+
+def test_s1_bullet_chart_div_id(s1_pipeline_result):
+    html = _render_s1_bullet_chart(s1_pipeline_result)
+    assert 's1-bullet-chart' in html
+
+
+def test_s1_bullet_chart_symbol_names(s1_pipeline_result):
+    html = _render_s1_bullet_chart(s1_pipeline_result)
+    assert "BTC/USDT" in html
+    assert "SOL/USDT" in html
+
+
+# ─── S1 Top Trials (Task 18) ───
+
+
+@pytest.fixture
+def s1_top_trials_data():
+    return {
+        "BTC/USDT": {
+            "n_trials_total": 500,
+            "trials": [
+                {
+                    "number": 42,
+                    "objective": 3.8,
+                    "params": {"macd_fast": 2.5, "macd_slow": 26, "rsi_period": 14},
+                    "metrics": {
+                        "sharpe_ratio_equity_based": 3.92,
+                        "max_drawdown": 0.083,
+                        "total_pnl_pct": 48.7,
+                        "trades_per_year": 169,
+                    },
+                },
+                {
+                    "number": 88,
+                    "objective": 3.5,
+                    "params": {"macd_fast": 3.0, "macd_slow": 28, "rsi_period": 12},
+                    "metrics": {
+                        "sharpe_ratio_equity_based": 3.50,
+                        "max_drawdown": 0.095,
+                        "total_pnl_pct": 40.2,
+                        "trades_per_year": 155,
+                    },
+                },
+            ],
+        },
+    }
+
+
+def test_s1_top_trials_has_plotly(s1_top_trials_data):
+    html = _render_s1_top_trials(s1_top_trials_data)
+    assert "Plotly.newPlot" in html
+
+
+def test_s1_top_trials_table_headers(s1_top_trials_data):
+    html = _render_s1_top_trials(s1_top_trials_data)
+    for header in ["Rank", "Objective", "Sharpe", "Max DD", "PnL%", "Trades/yr"]:
+        assert header in html
+
+
+def test_s1_top_trials_empty_data():
+    html = _render_s1_top_trials({})
+    assert "no-data" in html
+
+
+def test_s1_top_trials_parcoords_div(s1_top_trials_data):
+    html = _render_s1_top_trials(s1_top_trials_data)
+    assert "s1-parcoords-BTCUSDT" in html
+
+
+def test_s1_top_trials_scatter_div(s1_top_trials_data):
+    html = _render_s1_top_trials(s1_top_trials_data)
+    assert "s1-scatter-BTCUSDT" in html
+
+
+def test_s1_top_trials_shows_trial_count(s1_top_trials_data):
+    html = _render_s1_top_trials(s1_top_trials_data)
+    assert "500" in html
+
+
+# ─── S1 Optimization History (Task 19) ───
+
+
+@pytest.fixture
+def s1_history_data():
+    return {
+        "BTC/USDT": {
+            "trial_numbers": [1, 2, 3, 4, 5],
+            "objective_values": [1.0, 1.5, 1.2, 2.0, 1.8],
+            "best_so_far": [1.0, 1.5, 1.5, 2.0, 2.0],
+        },
+        "SOL/USDT": {
+            "trial_numbers": [1, 2, 3],
+            "objective_values": [0.5, 1.0, 0.8],
+            "best_so_far": [0.5, 1.0, 1.0],
+        },
+    }
+
+
+def test_s1_history_has_plotly(s1_history_data):
+    html = _render_s1_optimization_history(s1_history_data)
+    assert "Plotly.newPlot" in html
+
+
+def test_s1_history_empty_data():
+    html = _render_s1_optimization_history({})
+    assert "no-data" in html
+
+
+def test_s1_history_per_pair_div_ids(s1_history_data):
+    html = _render_s1_optimization_history(s1_history_data)
+    assert "s1-history-BTCUSDT" in html
+    assert "s1-history-SOLUSDT" in html
+
+
+def test_s1_history_grid_layout(s1_history_data):
+    html = _render_s1_optimization_history(s1_history_data)
+    assert "grid-2col" in html
+
+
+def test_s1_history_best_trial_marker(s1_history_data):
+    html = _render_s1_optimization_history(s1_history_data)
+    assert "star" in html
+
+
+# ─── S2 Portfolio Parameters Card (Task 20) ───
+
+
+@pytest.fixture
+def pareto_front_with_params():
+    return {
+        "portfolio_params": {
+            "max_concurrent": 6,
+            "cluster_max": 2,
+            "portfolio_heat": 0.06,
+            "corr_gate_threshold": 0.65,
+        },
+        "selected_trial": 10,
+        "trials": [
+            {
+                "number": 10,
+                "params": {
+                    "max_concurrent": 6,
+                    "cluster_max": 2,
+                    "portfolio_heat": 0.06,
+                    "corr_gate_threshold": 0.65,
+                },
+                "objectives": {
+                    "portfolio_calmar": 4.5,
+                    "worst_pair_calmar": 2.1,
+                    "neg_overfit_penalty": -0.3,
+                },
+            },
+        ],
+    }
+
+
+def test_s2_params_shows_param_names(pareto_front_with_params):
+    html = _render_s2_params(pareto_front_with_params)
+    for name in ["max_concurrent", "cluster_max", "portfolio_heat", "corr_gate_threshold"]:
+        assert name in html
+
+
+def test_s2_params_shows_values(pareto_front_with_params):
+    html = _render_s2_params(pareto_front_with_params)
+    assert "6" in html
+    assert "0.06" in html
+    assert "0.65" in html
+
+
+def test_s2_params_empty_data():
+    html = _render_s2_params({})
+    assert "no-data" in html
+
+
+def test_s2_params_fallback_to_selected_trial():
+    data = {
+        "selected_trial": 5,
+        "trials": [
+            {
+                "number": 5,
+                "params": {"max_concurrent": 8, "cluster_max": 3, "portfolio_heat": 0.07, "corr_gate_threshold": 0.70},
+                "objectives": {},
+            },
+        ],
+    }
+    html = _render_s2_params(data)
+    assert "max_concurrent" in html
+    assert "8" in html
+
+
+def test_s2_params_shows_ranges(pareto_front_with_params):
+    html = _render_s2_params(pareto_front_with_params)
+    # Ranges should be present in the output
+    assert "3" in html  # min of max_concurrent range
+    assert "10" in html  # max of max_concurrent range
+
+
+# ─── Pareto Front Scatter (Task 21) ───
+
+
+def test_pareto_front_has_plotly(pareto_front_with_params):
+    html = _render_pareto_front(pareto_front_with_params)
+    assert "Plotly.newPlot" in html
+
+
+def test_pareto_front_star_marker(pareto_front_with_params):
+    html = _render_pareto_front(pareto_front_with_params)
+    assert "star" in html
+
+
+def test_pareto_front_empty_trials():
+    html = _render_pareto_front({"trials": []})
+    assert "no-data" in html
+
+
+def test_pareto_front_empty_dict():
+    html = _render_pareto_front({})
+    assert "no-data" in html
+
+
+def test_pareto_front_div_id(pareto_front_with_params):
+    html = _render_pareto_front(pareto_front_with_params)
+    assert 'id="pareto-front-chart"' in html
+
+
+def test_pareto_front_multiple_trials():
+    data = {
+        "selected_trial": 1,
+        "trials": [
+            {"number": 1, "objectives": {"portfolio_calmar": 4.5, "worst_pair_calmar": 2.1, "neg_overfit_penalty": -0.3}},
+            {"number": 2, "objectives": {"portfolio_calmar": 3.8, "worst_pair_calmar": 1.9, "neg_overfit_penalty": -0.5}},
+            {"number": 3, "objectives": {"portfolio_calmar": 5.0, "worst_pair_calmar": 2.5, "neg_overfit_penalty": -0.1}},
+        ],
+    }
+    html = _render_pareto_front(data)
+    assert "Plotly.newPlot" in html
+    assert "star" in html
+    assert "Viridis" in html
+
+
+# ─── S2 Optimization History (Task 22) ───
+
+
+@pytest.fixture
+def s2_history_data():
+    return {
+        "trial_numbers": [1, 2, 3, 4, 5],
+        "portfolio_calmar_values": [2.0, 2.5, 2.3, 3.0, 2.8],
+        "best_calmar_so_far": [2.0, 2.5, 2.5, 3.0, 3.0],
+    }
+
+
+def test_s2_history_has_plotly(s2_history_data):
+    html = _render_s2_optimization_history(s2_history_data)
+    assert "Plotly.newPlot" in html
+
+
+def test_s2_history_both_traces(s2_history_data):
+    html = _render_s2_optimization_history(s2_history_data)
+    assert "Portfolio Calmar" in html
+    assert "Best Calmar so far" in html
+
+
+def test_s2_history_empty_data():
+    html = _render_s2_optimization_history({})
+    assert "no-data" in html
+
+
+def test_s2_history_div_id(s2_history_data):
+    html = _render_s2_optimization_history(s2_history_data)
+    assert 'id="s2-opt-history-chart"' in html
+
+
+def test_s2_history_empty_trial_numbers():
+    html = _render_s2_optimization_history({"trial_numbers": [], "portfolio_calmar_values": [], "best_calmar_so_far": []})
+    assert "no-data" in html

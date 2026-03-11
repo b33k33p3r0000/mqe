@@ -778,28 +778,511 @@ def _render_s1_params_table(pipeline_result: Dict[str, Any]) -> str:
     return table + pill_html
 
 
+PARAM_RANGES = {
+    "macd_fast": (1.0, 20.0),
+    "macd_slow": (10, 45),
+    "macd_signal": (3, 15),
+    "rsi_period": (3, 30),
+    "rsi_lower": (20, 40),
+    "rsi_upper": (60, 80),
+    "rsi_lookback": (1, 4),
+    "trend_tf": (0, 3),
+    "adx_threshold": (15, 35),
+    "trail_mult": (1.0, 5.0),
+    "hard_stop_mult": (1.0, 5.0),
+    "max_hold_bars": (24, 168),
+}
+
+S2_RANGES = {
+    "max_concurrent": (3, 10),
+    "cluster_max": (1, 4),
+    "portfolio_heat": (0.03, 0.10),
+    "corr_gate_threshold": (0.50, 0.80),
+}
+
+_PAIR_COLORS = [
+    "#86e1fc", "#c3e88d", "#ff757f", "#ffc777", "#c099ff", "#4fd6be",
+]
+
+
 def _render_s1_bullet_chart(pipeline_result: Dict[str, Any]) -> str:
-    return '<div class="no-data">S1 Bullet Chart placeholder</div>'
+    s1_results = pipeline_result.get("stage1_results", {})
+    if not s1_results:
+        return '<div class="no-data">No S1 data for bullet chart</div>'
+
+    symbols = sorted(s1_results.keys())
+    param_names = list(PARAM_RANGES.keys())
+
+    traces = []
+    # Background range bars (one per param)
+    range_y = []
+    range_base = []
+    range_width = []
+    for pname in param_names:
+        lo, hi = PARAM_RANGES[pname]
+        range_y.append(pname)
+        range_base.append(lo)
+        range_width.append(hi - lo)
+
+    traces.append({
+        "type": "bar",
+        "orientation": "h",
+        "y": range_y,
+        "x": range_width,
+        "base": range_base,
+        "name": "Search Range",
+        "marker": {"color": "rgba(59,66,97,0.6)"},
+        "hoverinfo": "skip",
+        "showlegend": True,
+    })
+
+    # Marker per symbol
+    for idx, sym in enumerate(symbols):
+        color = _PAIR_COLORS[idx % len(_PAIR_COLORS)]
+        params = s1_results[sym]
+        marker_y = []
+        marker_x = []
+        for pname in param_names:
+            val = params.get(pname)
+            if val is not None:
+                try:
+                    marker_x.append(float(val))
+                    marker_y.append(pname)
+                except (TypeError, ValueError):
+                    pass
+        traces.append({
+            "type": "scatter",
+            "mode": "markers",
+            "y": marker_y,
+            "x": marker_x,
+            "name": sym,
+            "marker": {"color": color, "size": 12, "symbol": "diamond"},
+        })
+
+    traces_json = json.dumps(traces)
+
+    return f"""<div class="chart-container">
+<div id="s1-bullet-chart" style="width:100%;height:{max(400, len(param_names) * 35)}px;"></div>
+<script>
+(function() {{
+  var traces = {traces_json};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'S1 Strategy Parameters — Bullet Chart', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 130, r: 30, t: 40, b: 40}},
+    barmode: 'overlay',
+    showlegend: true,
+    legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{gridcolor: '#3b4261', showgrid: false, autorange: 'reversed'}}
+  }};
+  Plotly.newPlot('s1-bullet-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
 
 
 def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
-    return '<div class="no-data">S1 Top Trials placeholder</div>'
+    if not s1_top_trials:
+        return '<div class="no-data">No S1 top trials data available</div>'
+
+    sections = []
+    for sym in sorted(s1_top_trials.keys()):
+        sym_data = s1_top_trials[sym]
+        trials = sym_data.get("trials", [])
+        n_total = sym_data.get("n_trials_total", 0)
+        if not trials:
+            continue
+
+        safe_id = sym.replace("/", "").replace(" ", "")
+
+        # ── Top-20 Table ──
+        headers = ["Rank", "Objective", "Sharpe", "Max DD", "PnL%", "Trades/yr"]
+        header_row = "".join(f"<th>{h}</th>" for h in headers)
+        rows = []
+        for i, t in enumerate(trials[:20]):
+            m = t.get("metrics", {})
+            rows.append(
+                f"<tr>"
+                f"<td>{i + 1}</td>"
+                f"<td>{t.get('objective', 0):.4f}</td>"
+                f"<td>{m.get('sharpe_ratio_equity_based', m.get('sharpe', 0)):.2f}</td>"
+                f"<td>{abs(m.get('max_drawdown', 0)) * 100:.1f}%</td>"
+                f"<td>{m.get('total_pnl_pct', m.get('pnl_pct', 0)):.1f}%</td>"
+                f"<td>{m.get('trades_per_year', 0):.0f}</td>"
+                f"</tr>"
+            )
+        table_html = (
+            f'<h3 style="color:#c099ff;margin:16px 0 8px 0;">{sym} — Top {len(trials[:20])} of {n_total} trials</h3>'
+            f'<table><thead><tr>{header_row}</tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>'
+        )
+
+        # ── Parallel Coordinates Chart ──
+        # Build dimensions from params of top trials
+        param_keys = []
+        if trials:
+            param_keys = sorted(trials[0].get("params", {}).keys())
+
+        dimensions = []
+        for pk in param_keys:
+            vals = [t.get("params", {}).get(pk, 0) for t in trials]
+            dimensions.append({
+                "label": pk,
+                "values": vals,
+            })
+
+        obj_vals = [t.get("objective", 0) for t in trials]
+        parcoords_trace = {
+            "type": "parcoords",
+            "line": {
+                "color": obj_vals,
+                "colorscale": "Viridis",
+                "showscale": True,
+                "cmin": min(obj_vals) if obj_vals else 0,
+                "cmax": max(obj_vals) if obj_vals else 1,
+            },
+            "dimensions": dimensions,
+        }
+        parcoords_json = json.dumps([parcoords_trace])
+        parcoords_div = f"s1-parcoords-{safe_id}"
+
+        parcoords_html = f"""<div class="chart-container">
+<div id="{parcoords_div}" style="width:100%;height:400px;"></div>
+<script>
+(function() {{
+  var traces = {parcoords_json};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 10}},
+    title: {{text: '{sym} — Parallel Coordinates', font: {{size: 13, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 60, t: 40, b: 30}}
+  }};
+  Plotly.newPlot('{parcoords_div}', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+        # ── Scatter: Sharpe vs Max DD ──
+        scatter_sharpe = [
+            t.get("metrics", {}).get("sharpe_ratio_equity_based", t.get("metrics", {}).get("sharpe", 0))
+            for t in trials
+        ]
+        scatter_dd = [
+            abs(t.get("metrics", {}).get("max_drawdown", 0)) * 100
+            for t in trials
+        ]
+        scatter_obj = [t.get("objective", 0) for t in trials]
+
+        scatter_trace = {
+            "type": "scatter",
+            "mode": "markers",
+            "x": scatter_sharpe,
+            "y": scatter_dd,
+            "marker": {
+                "color": scatter_obj,
+                "colorscale": "Viridis",
+                "showscale": True,
+                "size": 8,
+                "cmin": min(scatter_obj) if scatter_obj else 0,
+                "cmax": max(scatter_obj) if scatter_obj else 1,
+            },
+            "text": [f"Trial {t.get('number', '?')}" for t in trials],
+            "hovertemplate": "Sharpe: %{x:.2f}<br>Max DD: %{y:.1f}%<br>%{text}<extra></extra>",
+        }
+        scatter_json = json.dumps([scatter_trace])
+        scatter_div = f"s1-scatter-{safe_id}"
+
+        scatter_html = f"""<div class="chart-container">
+<div id="{scatter_div}" style="width:100%;height:350px;"></div>
+<script>
+(function() {{
+  var traces = {scatter_json};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: '{sym} — Sharpe vs Max DD', font: {{size: 13, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 30, t: 40, b: 50}},
+    xaxis: {{title: 'Sharpe Ratio', gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Max DD (%)', gridcolor: '#3b4261', showgrid: true}}
+  }};
+  Plotly.newPlot('{scatter_div}', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+        sections.append(table_html + parcoords_html + scatter_html)
+
+    if not sections:
+        return '<div class="no-data">No S1 top trials data available</div>'
+
+    return "".join(sections)
 
 
 def _render_s1_optimization_history(s1_history: Dict[str, Any]) -> str:
-    return '<div class="no-data">S1 Optimization History placeholder</div>'
+    if not s1_history:
+        return '<div class="no-data">No S1 optimization history available</div>'
+
+    charts = []
+    for sym in sorted(s1_history.keys()):
+        data = s1_history[sym]
+        trial_nums = data.get("trial_numbers", [])
+        obj_vals = data.get("objective_values", [])
+        best_so_far = data.get("best_so_far", [])
+
+        if not trial_nums:
+            continue
+
+        safe_id = sym.replace("/", "").replace(" ", "")
+        div_id = f"s1-history-{safe_id}"
+
+        traces = [
+            {
+                "type": "scatter",
+                "mode": "markers",
+                "x": trial_nums,
+                "y": obj_vals,
+                "name": "Objective",
+                "marker": {"color": "#86e1fc", "size": 3, "opacity": 0.5},
+            },
+            {
+                "type": "scatter",
+                "mode": "lines",
+                "x": trial_nums,
+                "y": best_so_far,
+                "name": "Best so far",
+                "line": {"color": "#c3e88d", "width": 2},
+            },
+        ]
+
+        # Highlight best trial
+        if obj_vals:
+            best_idx = obj_vals.index(max(obj_vals))
+            traces.append({
+                "type": "scatter",
+                "mode": "markers",
+                "x": [trial_nums[best_idx]],
+                "y": [obj_vals[best_idx]],
+                "name": "Best trial",
+                "marker": {"color": "#ffc777", "size": 12, "symbol": "star"},
+                "showlegend": True,
+            })
+
+        traces_json = json.dumps(traces)
+
+        chart_html = f"""<div class="chart-container">
+<div id="{div_id}" style="width:100%;height:300px;"></div>
+<script>
+(function() {{
+  var traces = {traces_json};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 10}},
+    title: {{text: '{sym} — Optimization History', font: {{size: 12, color: '#c099ff'}}}},
+    margin: {{l: 50, r: 20, t: 35, b: 35}},
+    showlegend: true,
+    legend: {{font: {{size: 9}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{title: 'Trial', gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Objective', gridcolor: '#3b4261', showgrid: true}}
+  }};
+  Plotly.newPlot('{div_id}', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+        charts.append(chart_html)
+
+    if not charts:
+        return '<div class="no-data">No S1 optimization history available</div>'
+
+    return f'<div class="grid-2col" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;">{"".join(charts)}</div>'
 
 
 def _render_s2_params(pareto_front: Dict[str, Any]) -> str:
-    return '<div class="no-data">S2 Params placeholder</div>'
+    # Extract portfolio params from the selected trial in pareto_front,
+    # or from a top-level portfolio_params key
+    portfolio_params = pareto_front.get("portfolio_params", {})
+    if not portfolio_params:
+        # Try to get from selected trial
+        selected = pareto_front.get("selected_trial")
+        trials = pareto_front.get("trials", [])
+        for t in trials:
+            if t.get("number") == selected:
+                portfolio_params = t.get("params", {})
+                break
+    if not portfolio_params:
+        return '<div class="no-data">No S2 portfolio parameters available</div>'
+
+    rows_html = []
+    for param_name, (lo, hi) in S2_RANGES.items():
+        val = portfolio_params.get(param_name)
+        if val is None:
+            val_str = "—"
+        elif isinstance(val, float):
+            val_str = f"{val:.4g}"
+        else:
+            val_str = str(val)
+        rows_html.append(
+            f'<div class="wf-metric-row">'
+            f'<span class="wf-metric-label">{param_name}</span>'
+            f'<span class="wf-metric-value">{val_str} <span style="color:var(--text-muted);font-size:10px;">[{lo} — {hi}]</span></span>'
+            f'</div>'
+        )
+
+    return (
+        f'<div class="card" style="max-width:500px;margin-bottom:24px;">'
+        f'<h3 style="color:#c099ff;margin-bottom:12px;">S2 Portfolio Parameters</h3>'
+        f'{"".join(rows_html)}'
+        f'</div>'
+    )
 
 
 def _render_pareto_front(pareto_front: Dict[str, Any]) -> str:
-    return '<div class="no-data">Pareto Front placeholder</div>'
+    trials = pareto_front.get("trials", [])
+    if not trials:
+        return '<div class="no-data">No Pareto front data available</div>'
+
+    selected = pareto_front.get("selected_trial")
+
+    # Separate selected vs rest
+    rest_x = []
+    rest_y = []
+    rest_color = []
+    rest_text = []
+    sel_x = []
+    sel_y = []
+    sel_text = []
+
+    for t in trials:
+        obj = t.get("objectives", {})
+        px = obj.get("portfolio_calmar", 0)
+        py = obj.get("worst_pair_calmar", 0)
+        pc = obj.get("neg_overfit_penalty", 0)
+        label = f"Trial {t.get('number', '?')}"
+
+        if t.get("number") == selected:
+            sel_x.append(px)
+            sel_y.append(py)
+            sel_text.append(label)
+        else:
+            rest_x.append(px)
+            rest_y.append(py)
+            rest_color.append(pc)
+            rest_text.append(label)
+
+    traces = []
+
+    # Non-selected trials
+    if rest_x:
+        traces.append({
+            "type": "scatter",
+            "mode": "markers",
+            "x": rest_x,
+            "y": rest_y,
+            "name": "Trials",
+            "text": rest_text,
+            "marker": {
+                "color": rest_color,
+                "colorscale": "Viridis",
+                "showscale": True,
+                "size": 8,
+                "colorbar": {"title": "Overfit Penalty"},
+            },
+            "hovertemplate": "Portfolio Calmar: %{x:.2f}<br>Worst Pair Calmar: %{y:.2f}<br>%{text}<extra></extra>",
+        })
+
+    # Selected trial (star marker)
+    if sel_x:
+        traces.append({
+            "type": "scatter",
+            "mode": "markers",
+            "x": sel_x,
+            "y": sel_y,
+            "name": "Selected",
+            "text": sel_text,
+            "marker": {
+                "color": "#ffc777",
+                "size": 16,
+                "symbol": "star",
+                "line": {"color": "#ffffff", "width": 1},
+            },
+            "hovertemplate": "Portfolio Calmar: %{x:.2f}<br>Worst Pair Calmar: %{y:.2f}<br>%{text}<extra></extra>",
+        })
+
+    traces_json = json.dumps(traces)
+
+    return f"""<div class="chart-container">
+<div id="pareto-front-chart" style="width:100%;height:450px;"></div>
+<script>
+(function() {{
+  var traces = {traces_json};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Pareto Front — Portfolio vs Worst Pair Calmar', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 30, t: 40, b: 50}},
+    showlegend: true,
+    legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{title: 'Portfolio Calmar', gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Worst Pair Calmar', gridcolor: '#3b4261', showgrid: true}}
+  }};
+  Plotly.newPlot('pareto-front-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
 
 
 def _render_s2_optimization_history(s2_history: Dict[str, Any]) -> str:
-    return '<div class="no-data">S2 Optimization History placeholder</div>'
+    if not s2_history:
+        return '<div class="no-data">No S2 optimization history available</div>'
+
+    trial_nums = s2_history.get("trial_numbers", [])
+    calmar_vals = s2_history.get("portfolio_calmar_values", [])
+    best_calmar = s2_history.get("best_calmar_so_far", [])
+
+    if not trial_nums:
+        return '<div class="no-data">No S2 optimization history available</div>'
+
+    traces = [
+        {
+            "type": "scatter",
+            "mode": "markers",
+            "x": trial_nums,
+            "y": calmar_vals,
+            "name": "Portfolio Calmar",
+            "marker": {"color": "#86e1fc", "size": 4, "opacity": 0.5},
+        },
+        {
+            "type": "scatter",
+            "mode": "lines",
+            "x": trial_nums,
+            "y": best_calmar,
+            "name": "Best Calmar so far",
+            "line": {"color": "#c3e88d", "width": 2},
+        },
+    ]
+
+    traces_json = json.dumps(traces)
+
+    return f"""<div class="chart-container">
+<div id="s2-opt-history-chart" style="width:100%;height:400px;"></div>
+<script>
+(function() {{
+  var traces = {traces_json};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'S2 Optimization History', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 30, t: 40, b: 50}},
+    showlegend: true,
+    legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{title: 'Trial', gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Portfolio Calmar', gridcolor: '#3b4261', showgrid: true}}
+  }};
+  Plotly.newPlot('s2-opt-history-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
 
 
 def _render_pnl_contribution(
