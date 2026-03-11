@@ -1655,14 +1655,14 @@ def generate_html_report(
     portfolio_equity_curve: List[float],
     timestamps: List[str],
 ) -> str:
-    # Extract header data
-    run_tag = pipeline_result.get("run_tag", "unknown")
+    # Extract header data (support both original and pipeline key names)
+    run_tag = pipeline_result.get("run_tag", pipeline_result.get("tag", "unknown"))
     timestamp = pipeline_result.get("timestamp", datetime.datetime.utcnow().isoformat())
     symbols = pipeline_result.get("symbols", [])
     symbols_str = ", ".join(symbols) if symbols else "—"
-    s1_trials = pipeline_result.get("s1_trials", "—")
-    s2_trials = pipeline_result.get("s2_trials", "—")
-    hours = pipeline_result.get("duration_hours", "—")
+    s1_trials = pipeline_result.get("s1_trials", pipeline_result.get("stage1_trials", "—"))
+    s2_trials = pipeline_result.get("s2_trials", pipeline_result.get("stage2_trials", "—"))
+    hours = pipeline_result.get("duration_hours", pipeline_result.get("hours", "—"))
 
     # Render all sections
     hero = _render_hero_metrics(pipeline_result, eval_result, analysis)
@@ -1746,8 +1746,11 @@ def generate_html_report(
     return html
 
 
-def save_html_report(path: str, **kwargs: Any) -> None:
-    """Generate and write HTML report to the given file path."""
+def save_html_report(path, **kwargs: Any) -> None:
+    """Generate and save HTML report to file."""
+    from pathlib import Path as _Path
+
+    path = _Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     html = generate_html_report(**kwargs)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(html)
+    path.write_text(html, encoding="utf-8")

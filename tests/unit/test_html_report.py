@@ -1117,3 +1117,147 @@ def test_trade_analysis_exit_reason_names(trade_analysis_trades):
     assert "trailing_stop" in html
     assert "hard_stop" in html
     assert "max_hold" in html
+
+
+# ─── Save HTML Report (Task 27) ───
+
+
+class TestSaveHtmlReport:
+    def test_creates_file(self, tmp_path, minimal_report_args):
+        from mqe.html_report import save_html_report
+
+        path = tmp_path / "report.html"
+        save_html_report(path, **minimal_report_args)
+        assert path.exists()
+        content = path.read_text()
+        assert "<!DOCTYPE html>" in content
+
+    def test_creates_parent_dirs(self, tmp_path, minimal_report_args):
+        from mqe.html_report import save_html_report
+
+        path = tmp_path / "nested" / "dir" / "report.html"
+        save_html_report(path, **minimal_report_args)
+        assert path.exists()
+
+
+# ─── Full Integration Test (Task 29) ───
+
+
+class TestFullReportIntegration:
+    def test_full_report_with_realistic_data(self):
+        trades = [
+            {
+                "symbol": "BTC/USDT", "direction": "long", "entry_bar": 0, "exit_bar": 10,
+                "entry_ts": "2024-01-01", "exit_ts": "2024-01-11",
+                "entry_price": 40000, "exit_price": 42000,
+                "hold_bars": 10, "size": 0.5, "capital_at_entry": 20000,
+                "pnl_abs": 1000, "pnl_pct": 5.0, "reason": "trailing_stop",
+            },
+            {
+                "symbol": "ETH/USDT", "direction": "short", "entry_bar": 5, "exit_bar": 15,
+                "entry_ts": "2024-01-06", "exit_ts": "2024-01-16",
+                "entry_price": 2200, "exit_price": 2100,
+                "hold_bars": 10, "size": 10, "capital_at_entry": 20000,
+                "pnl_abs": 500, "pnl_pct": 2.5, "reason": "hard_stop",
+            },
+        ]
+        html = generate_html_report(
+            pipeline_result={
+                "tag": "integration-test",
+                "timestamp": "2026-03-11T10:00:00",
+                "symbols": ["BTC/USDT", "ETH/USDT"],
+                "stage1_trials": 50000,
+                "stage2_trials": 10000,
+                "hours": 26280,
+                "stage1_results": {
+                    "BTC/USDT": {"macd_fast": 2.1, "macd_slow": 28, "rsi_period": 14},
+                    "ETH/USDT": {"macd_fast": 3.5, "macd_slow": 32, "rsi_period": 12},
+                },
+                "stage2_results": {
+                    "portfolio_params": {
+                        "max_concurrent": 7, "cluster_max": 2,
+                        "portfolio_heat": 0.055, "corr_gate_threshold": 0.72,
+                    },
+                    "objectives": {
+                        "portfolio_calmar": 5.21, "worst_pair_calmar": 0.83,
+                        "neg_overfit_penalty": -0.01,
+                    },
+                },
+                "tier_assignments": {
+                    "BTC/USDT": {
+                        "tier": "A", "multiplier": 1.0, "sharpe": 1.8,
+                        "degradation": 0.7, "consistency": 0.3, "worst_sharpe": 0.9,
+                    },
+                    "ETH/USDT": {
+                        "tier": "B", "multiplier": 0.6, "sharpe": 1.2,
+                        "degradation": 0.5, "consistency": 0.5, "worst_sharpe": 0.4,
+                    },
+                },
+                "wf_eval_metrics": {
+                    "BTC/USDT": {
+                        "wf_sharpe_median": 1.5, "wf_sharpe_std": 0.3,
+                        "wf_worst_sharpe": 0.9, "degradation_ratio": 0.7, "n_windows": 3,
+                    },
+                    "ETH/USDT": {
+                        "wf_sharpe_median": 1.0, "wf_sharpe_std": 0.5,
+                        "wf_worst_sharpe": 0.3, "degradation_ratio": 0.5, "n_windows": 2,
+                    },
+                },
+            },
+            eval_result={
+                "per_pair_metrics": {
+                    "BTC/USDT": {
+                        "sharpe_ratio_equity_based": 1.8, "calmar_ratio": 4.5,
+                        "max_drawdown": -0.06, "win_rate": 62.0, "profit_factor": 1.8,
+                        "trades_per_year": 90, "total_pnl_pct": 45.0, "trades": 180,
+                    },
+                    "ETH/USDT": {
+                        "sharpe_ratio_equity_based": 1.2, "calmar_ratio": 3.1,
+                        "max_drawdown": -0.08, "win_rate": 58.0, "profit_factor": 1.5,
+                        "trades_per_year": 75, "total_pnl_pct": 30.0, "trades": 150,
+                    },
+                },
+                "portfolio_metrics": {
+                    "sharpe_ratio_equity_based": 2.14, "calmar_ratio": 5.82,
+                    "total_pnl_pct": 48.7,
+                },
+                "portfolio_result_summary": {
+                    "equity": 148742, "max_drawdown": 0.083, "total_trades": 338,
+                },
+            },
+            analysis={"per_pair": [], "portfolio": {"verdict": "PASS"}},
+            portfolio_trades=trades,
+            per_pair_trades={"BTC/USDT": [trades[0]], "ETH/USDT": [trades[1]]},
+            s1_top_trials={},
+            s1_history={},
+            pareto_front={
+                "selected_trial": 42,
+                "trials": [{
+                    "number": 42,
+                    "params": {"max_concurrent": 7},
+                    "objectives": {
+                        "portfolio_calmar": 5.21, "worst_pair_calmar": 0.83,
+                        "neg_overfit_penalty": -0.01,
+                    },
+                }],
+            },
+            s2_history={
+                "trial_numbers": [0, 1, 2],
+                "portfolio_calmar_values": [1.0, 2.0, 5.21],
+                "best_calmar_so_far": [1.0, 2.0, 5.21],
+            },
+            corr_matrix={
+                "symbols": ["BTC/USDT", "ETH/USDT"],
+                "matrix": [[1.0, 0.72], [0.72, 1.0]],
+                "corr_gate_threshold": 0.72,
+            },
+            pair_equity_curves={},
+            portfolio_equity_curve=[100000, 101000, 101500, 102000],
+            timestamps=["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"],
+        )
+        assert len(html) > 5000
+        assert "integration-test" in html
+        assert "BTC/USDT" in html
+        assert "ETH/USDT" in html
+        assert "148,742" in html
+        assert "Plotly.newPlot" in html

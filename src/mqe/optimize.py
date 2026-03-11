@@ -442,6 +442,10 @@ def run_final_evaluation(
             "max_positions_open": portfolio_result.max_positions_open,
             "peak_equity": float(portfolio_result.peak_equity),
         },
+        # Raw data for HTML report
+        "portfolio_equity_curve": portfolio_result.equity_curve.tolist(),
+        "all_trades": portfolio_result.all_trades,
+        "per_pair_trades": portfolio_result.per_pair_trades,
     }
 
 
@@ -732,6 +736,85 @@ def run_pipeline(
     )
     notify_complete(analysis)
 
+    # ── HTML report ──────────────────────────────────────────────
+    try:
+        from mqe.html_report import save_html_report
+
+        # Load exported data files
+        eval_dir = output_dir / "evaluation"
+        s1_dir = output_dir / "stage1"
+
+        # S1 top trials + history (exported during Stage 1)
+        s1_top_trials_data: dict[str, Any] = {}
+        s1_history_data: dict[str, Any] = {}
+        for sym in symbols:
+            safe = sym.replace("/", "_")
+            tt_path = s1_dir / f"{safe}_top_trials.json"
+            if tt_path.exists():
+                s1_top_trials_data[sym] = json.loads(tt_path.read_text())
+            hist_path = s1_dir / f"{safe}_history.json"
+            if hist_path.exists():
+                s1_history_data[sym] = json.loads(hist_path.read_text())
+
+        # S2 Pareto front + history (exported during Stage 2)
+        pareto_path = eval_dir / "pareto_front.json"
+        pareto_data = (
+            json.loads(pareto_path.read_text())
+            if pareto_path.exists()
+            else {"selected_trial": 0, "trials": []}
+        )
+
+        s2_hist_path = eval_dir / "s2_history.json"
+        s2_hist_data = (
+            json.loads(s2_hist_path.read_text())
+            if s2_hist_path.exists()
+            else {
+                "trial_numbers": [],
+                "portfolio_calmar_values": [],
+                "best_calmar_so_far": [],
+            }
+        )
+
+        # Correlation matrix
+        corr_path = eval_dir / "corr_matrix.json"
+        corr_data = (
+            json.loads(corr_path.read_text())
+            if corr_path.exists()
+            else {"symbols": [], "matrix": [], "corr_gate_threshold": 0}
+        )
+
+        # Equity curves + timestamps from eval_result
+        portfolio_eq = eval_result.get("portfolio_equity_curve", [])
+
+        # Timestamps from first pair's 1H data index
+        ts_list: list[str] = []
+        if all_data and symbols:
+            first_sym = symbols[0]
+            if first_sym in all_data and BASE_TF in all_data[first_sym]:
+                ts_list = [
+                    str(t) for t in all_data[first_sym][BASE_TF].index
+                ]
+
+        save_html_report(
+            output_dir / "report.html",
+            pipeline_result=combined,
+            eval_result=eval_result,
+            analysis=analysis,
+            portfolio_trades=eval_result.get("all_trades", []),
+            per_pair_trades=eval_result.get("per_pair_trades", {}),
+            s1_top_trials=s1_top_trials_data,
+            s1_history=s1_history_data,
+            pareto_front=pareto_data,
+            s2_history=s2_hist_data,
+            corr_matrix=corr_data,
+            pair_equity_curves={},
+            portfolio_equity_curve=portfolio_eq,
+            timestamps=ts_list,
+        )
+        logger.info("HTML report saved to %s", output_dir / "report.html")
+    except Exception:
+        logger.exception("Failed to generate HTML report")
+
     logger.info("Pipeline complete. Results saved to %s", output_dir)
     return combined
 
@@ -886,6 +969,85 @@ def resume_pipeline(
         output_dir / "report.md", combined, eval_result, analysis,
     )
     notify_complete(analysis)
+
+    # ── HTML report ──────────────────────────────────────────────
+    try:
+        from mqe.html_report import save_html_report
+
+        # Load exported data files
+        eval_dir = output_dir / "evaluation"
+        s1_dir = output_dir / "stage1"
+
+        # S1 top trials + history (exported during Stage 1)
+        s1_top_trials_data: dict[str, Any] = {}
+        s1_history_data: dict[str, Any] = {}
+        for sym in symbols:
+            safe = sym.replace("/", "_")
+            tt_path = s1_dir / f"{safe}_top_trials.json"
+            if tt_path.exists():
+                s1_top_trials_data[sym] = json.loads(tt_path.read_text())
+            hist_path = s1_dir / f"{safe}_history.json"
+            if hist_path.exists():
+                s1_history_data[sym] = json.loads(hist_path.read_text())
+
+        # S2 Pareto front + history (exported during Stage 2)
+        pareto_path = eval_dir / "pareto_front.json"
+        pareto_data = (
+            json.loads(pareto_path.read_text())
+            if pareto_path.exists()
+            else {"selected_trial": 0, "trials": []}
+        )
+
+        s2_hist_path = eval_dir / "s2_history.json"
+        s2_hist_data = (
+            json.loads(s2_hist_path.read_text())
+            if s2_hist_path.exists()
+            else {
+                "trial_numbers": [],
+                "portfolio_calmar_values": [],
+                "best_calmar_so_far": [],
+            }
+        )
+
+        # Correlation matrix
+        corr_path = eval_dir / "corr_matrix.json"
+        corr_data = (
+            json.loads(corr_path.read_text())
+            if corr_path.exists()
+            else {"symbols": [], "matrix": [], "corr_gate_threshold": 0}
+        )
+
+        # Equity curves + timestamps from eval_result
+        portfolio_eq = eval_result.get("portfolio_equity_curve", [])
+
+        # Timestamps from first pair's 1H data index
+        ts_list: list[str] = []
+        if all_data and symbols:
+            first_sym = symbols[0]
+            if first_sym in all_data and BASE_TF in all_data[first_sym]:
+                ts_list = [
+                    str(t) for t in all_data[first_sym][BASE_TF].index
+                ]
+
+        save_html_report(
+            output_dir / "report.html",
+            pipeline_result=combined,
+            eval_result=eval_result,
+            analysis=analysis,
+            portfolio_trades=eval_result.get("all_trades", []),
+            per_pair_trades=eval_result.get("per_pair_trades", {}),
+            s1_top_trials=s1_top_trials_data,
+            s1_history=s1_history_data,
+            pareto_front=pareto_data,
+            s2_history=s2_hist_data,
+            corr_matrix=corr_data,
+            pair_equity_curves={},
+            portfolio_equity_curve=portfolio_eq,
+            timestamps=ts_list,
+        )
+        logger.info("HTML report saved to %s", output_dir / "report.html")
+    except Exception:
+        logger.exception("Failed to generate HTML report")
 
     logger.info("Resume pipeline complete. Results saved to %s", output_dir)
     return combined
