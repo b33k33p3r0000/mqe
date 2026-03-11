@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List
 import datetime
 
@@ -227,21 +228,193 @@ def _render_hero_metrics(
     eval_result: Dict[str, Any],
     analysis: Dict[str, Any],
 ) -> str:
-    return '<div class="no-data">Hero Metrics placeholder</div>'
+    summary = eval_result.get("portfolio_result_summary", {})
+    metrics = eval_result.get("portfolio_metrics", {})
+
+    equity = summary.get("equity", 0.0)
+    total_pnl_pct = metrics.get("total_pnl_pct", 0.0)
+    calmar = metrics.get("calmar_ratio", 0.0)
+    sharpe = metrics.get("sharpe_ratio_equity_based", 0.0)
+    max_dd = summary.get("max_drawdown", 0.0)
+    total_trades = summary.get("total_trades", 0)
+
+    # Format values
+    equity_str = f"${equity:,.2f}"
+    pnl_str = f"{total_pnl_pct:+.1f}%"
+    calmar_str = f"{calmar:.2f}"
+    sharpe_str = f"{sharpe:.2f}"
+    dd_display = abs(max_dd) * 100
+    dd_str = f"-{dd_display:.1f}%"
+    trades_str = str(total_trades)
+
+    # Color classes
+    pnl_class = "positive" if total_pnl_pct >= 0 else "negative"
+    if dd_display > 5:
+        dd_class = "negative"
+    elif dd_display > 3:
+        dd_class = "warning"
+    else:
+        dd_class = ""
+
+    cards = [
+        ("Final Equity", equity_str, ""),
+        ("Total PnL", pnl_str, pnl_class),
+        ("Calmar Ratio", calmar_str, ""),
+        ("Sharpe (equity)", sharpe_str, ""),
+        ("Max Drawdown", dd_str, dd_class),
+        ("Total Trades", trades_str, ""),
+    ]
+
+    html_cards = []
+    for label, value, cls in cards:
+        cls_attr = f' {cls}' if cls else ""
+        html_cards.append(
+            f'<div class="hero-card">'
+            f'<div class="hero-label">{label}</div>'
+            f'<div class="hero-value{cls_attr}">{value}</div>'
+            f'</div>'
+        )
+
+    return f'<div class="hero-grid">{"".join(html_cards)}</div>'
 
 
 def _render_portfolio_equity_curve(
     portfolio_equity_curve: List[float],
     timestamps: List[str],
 ) -> str:
-    return '<div class="no-data">Portfolio Equity Curve placeholder</div>'
+    if not portfolio_equity_curve:
+        return '<div class="no-data">No equity data available</div>'
+
+    # Compute high-water mark and drawdown
+    hwm = []
+    drawdown = []
+    running_max = float("-inf")
+    for val in portfolio_equity_curve:
+        running_max = max(running_max, val)
+        hwm.append(running_max)
+        drawdown.append(val - running_max)
+
+    # Use timestamps if available, otherwise generate indices
+    x_data = timestamps if timestamps else list(range(len(portfolio_equity_curve)))
+
+    x_json = json.dumps(x_data)
+    eq_json = json.dumps(portfolio_equity_curve)
+    hwm_json = json.dumps(hwm)
+    dd_json = json.dumps(drawdown)
+
+    return f"""<div class="chart-container">
+<div id="portfolio-equity-chart" style="width:100%;height:450px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var equity = {eq_json};
+  var hwm = {hwm_json};
+  var dd = {dd_json};
+  var traces = [
+    {{
+      x: x, y: equity, type: 'scatter', mode: 'lines',
+      name: 'Equity', line: {{color: '#86e1fc', width: 2}},
+      fill: 'tozeroy', fillcolor: 'rgba(134,225,252,0.1)'
+    }},
+    {{
+      x: x, y: hwm, type: 'scatter', mode: 'lines',
+      name: 'High-Water Mark', line: {{color: '#ffffff', width: 1, dash: 'dot'}}
+    }},
+    {{
+      x: x, y: dd, type: 'scatter', mode: 'lines',
+      name: 'Drawdown', line: {{color: '#ff757f', width: 1}},
+      fill: 'tozeroy', fillcolor: 'rgba(255,117,127,0.2)',
+      yaxis: 'y2'
+    }}
+  ];
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Portfolio Equity Curve', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 40, t: 40, b: 40}},
+    showlegend: true,
+    legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Equity ($)', gridcolor: '#3b4261', showgrid: true}},
+    yaxis2: {{title: 'Drawdown ($)', overlaying: 'y', side: 'right', gridcolor: '#3b4261', showgrid: false}}
+  }};
+  Plotly.newPlot('portfolio-equity-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
 
 
 def _render_concurrent_positions(
     portfolio_trades: List[Dict[str, Any]],
     timestamps: List[str],
 ) -> str:
-    return '<div class="no-data">Concurrent Positions placeholder</div>'
+    if not portfolio_trades:
+        return '<div class="no-data">No trade data available</div>'
+
+    # Collect all entry/exit events
+    events: List[tuple] = []
+    for trade in portfolio_trades:
+        entry_ts = trade.get("entry_time") or trade.get("entry_timestamp")
+        exit_ts = trade.get("exit_time") or trade.get("exit_timestamp")
+        if entry_ts and exit_ts:
+            events.append((entry_ts, 1))
+            events.append((exit_ts, -1))
+
+    if not events:
+        return '<div class="no-data">No trade data available</div>'
+
+    # Sort events by timestamp, exits before entries at same time
+    events.sort(key=lambda e: (e[0], e[1]))
+
+    # Compute concurrent count over time
+    x_vals = []
+    y_vals = []
+    count = 0
+    for ts, delta in events:
+        count += delta
+        x_vals.append(ts)
+        y_vals.append(count)
+
+    max_concurrent = max(y_vals) if y_vals else 0
+
+    x_json = json.dumps(x_vals)
+    y_json = json.dumps(y_vals)
+
+    return f"""<div class="chart-container">
+<div id="concurrent-positions-chart" style="width:100%;height:350px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var y = {y_json};
+  var maxConc = {max_concurrent};
+  var traces = [
+    {{
+      x: x, y: y, type: 'scatter', mode: 'lines',
+      name: 'Concurrent Positions',
+      line: {{color: '#c099ff', width: 2, shape: 'hv'}},
+      fill: 'tozeroy', fillcolor: 'rgba(192,153,255,0.1)'
+    }},
+    {{
+      x: [x[0], x[x.length - 1]], y: [maxConc, maxConc],
+      type: 'scatter', mode: 'lines',
+      name: 'Max Concurrent (' + maxConc + ')',
+      line: {{color: '#ff966c', width: 1, dash: 'dash'}}
+    }}
+  ];
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Concurrent Positions', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 50, r: 30, t: 40, b: 40}},
+    showlegend: true,
+    legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Open Positions', gridcolor: '#3b4261', showgrid: true, dtick: 1}}
+  }};
+  Plotly.newPlot('concurrent-positions-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
 
 
 def _render_per_pair_table(
