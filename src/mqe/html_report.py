@@ -1289,25 +1289,355 @@ def _render_pnl_contribution(
     portfolio_trades: List[Dict[str, Any]],
     per_pair_trades: Dict[str, List[Dict[str, Any]]],
 ) -> str:
-    return '<div class="no-data">PnL Contribution placeholder</div>'
+    if not per_pair_trades:
+        return '<div class="no-data">No P&amp;L contribution data available</div>'
+
+    # Calculate absolute PnL per pair
+    pair_pnl: Dict[str, float] = {}
+    for symbol, trades in per_pair_trades.items():
+        pair_pnl[symbol] = sum(t.get("pnl_abs", 0.0) for t in trades)
+
+    if not pair_pnl:
+        return '<div class="no-data">No P&amp;L contribution data available</div>'
+
+    # Sort by absolute contribution (largest first)
+    sorted_pairs = sorted(pair_pnl.items(), key=lambda x: abs(x[1]), reverse=True)
+
+    total_abs = sum(abs(v) for v in pair_pnl.values())
+
+    symbols = [p[0] for p in sorted_pairs]
+    values = [p[1] for p in sorted_pairs]
+    colors = ["#c3e88d" if v >= 0 else "#ff757f" for v in values]
+    pct_labels = [
+        f"{(v / total_abs * 100):+.1f}%" if total_abs > 0 else "0.0%"
+        for v in values
+    ]
+
+    symbols_json = json.dumps(symbols)
+    values_json = json.dumps(values)
+    colors_json = json.dumps(colors)
+    labels_json = json.dumps(pct_labels)
+
+    return f"""<div class="chart-container">
+<div id="pnl-contribution-chart" style="width:100%;height:400px;"></div>
+<script>
+(function() {{
+  var symbols = {symbols_json};
+  var values = {values_json};
+  var colors = {colors_json};
+  var labels = {labels_json};
+  var trace = {{
+    y: symbols,
+    x: values,
+    type: 'bar',
+    orientation: 'h',
+    marker: {{color: colors}},
+    text: labels,
+    textposition: 'outside',
+    textfont: {{color: '#c8d3f5', size: 11}}
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d',
+    plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: "'JetBrains Mono', monospace", size: 11}},
+    title: {{text: 'Per-Pair P&L Contribution', font: {{color: '#c099ff', size: 14}}}},
+    margin: {{l: 120, r: 60, t: 40, b: 40}},
+    xaxis: {{title: 'P&L ($)', gridcolor: '#3b4261', zeroline: true, zerolinecolor: '#545c7e'}},
+    yaxis: {{autorange: 'reversed'}}
+  }};
+  Plotly.newPlot('pnl-contribution-chart', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
 
 
 def _render_correlation_heatmap(corr_matrix: Dict[str, Any]) -> str:
-    return '<div class="no-data">Correlation Heatmap placeholder</div>'
+    symbols = corr_matrix.get("symbols", [])
+    matrix = corr_matrix.get("matrix", [])
+    threshold = corr_matrix.get("corr_gate_threshold", None)
+
+    if not symbols or not matrix:
+        return '<div class="no-data">No correlation data available</div>'
+
+    # Build annotation text (correlation values on cells)
+    annotations: List[str] = []
+    for i, row in enumerate(matrix):
+        for j, val in enumerate(row):
+            annotations.append(
+                f"{{x: {j}, y: {i}, text: '{val:.2f}', showarrow: false, "
+                f"font: {{color: '#c8d3f5', size: 10}}}}"
+            )
+    annotations_str = ",\n    ".join(annotations)
+
+    symbols_json = json.dumps(symbols)
+    matrix_json = json.dumps(matrix)
+
+    threshold_annotation = ""
+    threshold_text = ""
+    if threshold is not None:
+        threshold_text = f"Correlation Gate Threshold: {threshold}"
+
+    return f"""<div class="chart-container">
+<div id="correlation-heatmap" style="width:100%;height:500px;"></div>
+<script>
+(function() {{
+  var symbols = {symbols_json};
+  var matrix = {matrix_json};
+  var trace = {{
+    z: matrix,
+    x: symbols,
+    y: symbols,
+    type: 'heatmap',
+    colorscale: 'RdBu',
+    reversescale: true,
+    zmin: -1,
+    zmax: 1,
+    colorbar: {{
+      title: 'Correlation',
+      titlefont: {{color: '#c8d3f5'}},
+      tickfont: {{color: '#c8d3f5'}}
+    }}
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d',
+    plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: "'JetBrains Mono', monospace", size: 11}},
+    title: {{text: '{threshold_text}', font: {{color: '#c099ff', size: 13}}}},
+    margin: {{l: 100, r: 40, t: 50, b: 100}},
+    xaxis: {{tickangle: -45}},
+    yaxis: {{autorange: 'reversed'}},
+    annotations: [
+    {annotations_str}
+    ]
+  }};
+  Plotly.newPlot('correlation-heatmap', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
 
 
 def _render_monthly_returns(
     portfolio_trades: List[Dict[str, Any]],
     timestamps: List[str],
 ) -> str:
-    return '<div class="no-data">Monthly Returns placeholder</div>'
+    if not portfolio_trades:
+        return '<div class="no-data">No trade data for monthly returns</div>'
+
+    start_equity = 100_000.0
+
+    # Group trades by year-month using exit_ts
+    monthly_pnl: Dict[str, float] = {}
+    for trade in portfolio_trades:
+        exit_ts = trade.get("exit_ts", "")
+        if not exit_ts:
+            continue
+        # Parse year and month from timestamp (ISO format expected)
+        try:
+            ts_str = str(exit_ts)
+            year_month = ts_str[:7]  # "YYYY-MM"
+            if len(year_month) == 7 and year_month[4] == "-":
+                pnl = trade.get("pnl_abs", 0.0)
+                monthly_pnl[year_month] = monthly_pnl.get(year_month, 0.0) + pnl
+        except (ValueError, IndexError):
+            continue
+
+    if not monthly_pnl:
+        return '<div class="no-data">No trade data for monthly returns</div>'
+
+    # Get year range
+    years = sorted(set(ym[:4] for ym in monthly_pnl.keys()))
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    # Build table rows
+    rows_html = []
+    for year in years:
+        cells = [f'<td style="font-weight:600;">{year}</td>']
+        year_total = 0.0
+        for m_idx in range(1, 13):
+            key = f"{year}-{m_idx:02d}"
+            pnl = monthly_pnl.get(key, None)
+            if pnl is not None:
+                ret_pct = (pnl / start_equity) * 100
+                year_total += ret_pct
+                # Color: green for positive, red for negative, scaled alpha
+                magnitude = min(abs(ret_pct) / 10.0, 1.0)  # Scale to max 10%
+                alpha = max(0.15, magnitude * 0.6)
+                if ret_pct >= 0:
+                    bg = f"rgba(195, 232, 141, {alpha:.2f})"
+                    color = "#c3e88d"
+                else:
+                    bg = f"rgba(255, 117, 127, {alpha:.2f})"
+                    color = "#ff757f"
+                cells.append(
+                    f'<td style="background:{bg};color:{color};text-align:center;">'
+                    f'{ret_pct:+.1f}%</td>'
+                )
+            else:
+                cells.append('<td style="text-align:center;color:#3b4261;">—</td>')
+
+        # Year total column
+        magnitude = min(abs(year_total) / 30.0, 1.0)
+        alpha = max(0.15, magnitude * 0.6)
+        if year_total >= 0:
+            bg = f"rgba(195, 232, 141, {alpha:.2f})"
+            color = "#c3e88d"
+        else:
+            bg = f"rgba(255, 117, 127, {alpha:.2f})"
+            color = "#ff757f"
+        cells.append(
+            f'<td style="background:{bg};color:{color};text-align:center;font-weight:600;">'
+            f'{year_total:+.1f}%</td>'
+        )
+        rows_html.append(f'<tr>{"".join(cells)}</tr>')
+
+    headers = ["Year"] + month_names + ["Year Total"]
+    header_cells = "".join(f"<th>{h}</th>" for h in headers)
+
+    return f"""<div class="chart-container">
+<h3 style="color:var(--accent-purple);font-size:14px;margin-bottom:12px;">Monthly Returns</h3>
+<table>
+<thead><tr>{header_cells}</tr></thead>
+<tbody>{"".join(rows_html)}</tbody>
+</table>
+</div>"""
 
 
 def _render_trade_analysis(
     portfolio_trades: List[Dict[str, Any]],
     per_pair_trades: Dict[str, List[Dict[str, Any]]],
 ) -> str:
-    return '<div class="no-data">Trade Analysis placeholder</div>'
+    if not portfolio_trades:
+        return '<div class="no-data">No trade data for analysis</div>'
+
+    sections: List[str] = []
+
+    # ── 1. Long/Short Breakdown ──
+    long_trades = [t for t in portfolio_trades if t.get("direction") == "long"]
+    short_trades = [t for t in portfolio_trades if t.get("direction") == "short"]
+
+    def _direction_card(label: str, trades: List[Dict[str, Any]]) -> str:
+        count = len(trades)
+        total_pnl = sum(t.get("pnl_abs", 0.0) for t in trades)
+        wins = sum(1 for t in trades if t.get("pnl_abs", 0.0) > 0)
+        win_rate = (wins / count * 100) if count > 0 else 0.0
+        pnl_color = "#c3e88d" if total_pnl >= 0 else "#ff757f"
+        return (
+            f'<div class="card">'
+            f'<div class="card-label">{label}</div>'
+            f'<div class="wf-metric-row">'
+            f'<span class="wf-metric-label">Trades</span>'
+            f'<span class="wf-metric-value">{count}</span></div>'
+            f'<div class="wf-metric-row">'
+            f'<span class="wf-metric-label">Total PnL</span>'
+            f'<span class="wf-metric-value" style="color:{pnl_color}">${total_pnl:,.2f}</span></div>'
+            f'<div class="wf-metric-row">'
+            f'<span class="wf-metric-label">Win Rate</span>'
+            f'<span class="wf-metric-value">{win_rate:.1f}%</span></div>'
+            f'</div>'
+        )
+
+    long_card = _direction_card("Long Trades", long_trades)
+    short_card = _direction_card("Short Trades", short_trades)
+    sections.append(
+        f'<div class="grid-2col" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px;">'
+        f'{long_card}{short_card}</div>'
+    )
+
+    # ── 2. Exit Reason Bar Chart ──
+    reason_counts: Dict[str, int] = {}
+    for t in portfolio_trades:
+        reason = t.get("reason", "unknown")
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    if reason_counts:
+        sorted_reasons = sorted(reason_counts.items(), key=lambda x: x[1], reverse=True)
+        reasons = [r[0] for r in sorted_reasons]
+        counts = [r[1] for r in sorted_reasons]
+        reasons_json = json.dumps(reasons)
+        counts_json = json.dumps(counts)
+
+        sections.append(f"""<div class="chart-container">
+<div id="exit-reasons-chart" style="width:100%;height:350px;"></div>
+<script>
+(function() {{
+  var trace = {{
+    x: {reasons_json},
+    y: {counts_json},
+    type: 'bar',
+    marker: {{color: '#86e1fc'}}
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d',
+    plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: "'JetBrains Mono', monospace", size: 11}},
+    title: {{text: 'Exit Reasons', font: {{color: '#c099ff', size: 14}}}},
+    margin: {{l: 50, r: 30, t: 40, b: 80}},
+    xaxis: {{tickangle: -30, gridcolor: '#3b4261'}},
+    yaxis: {{title: 'Count', gridcolor: '#3b4261'}}
+  }};
+  Plotly.newPlot('exit-reasons-chart', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>""")
+
+    # ── 3. P&L Distribution Histogram ──
+    pnl_pcts = [t.get("pnl_pct", 0.0) for t in portfolio_trades if "pnl_pct" in t]
+    if pnl_pcts:
+        pnl_pcts_json = json.dumps(pnl_pcts)
+        sections.append(f"""<div class="chart-container">
+<div id="pnl-distribution-chart" style="width:100%;height:350px;"></div>
+<script>
+(function() {{
+  var trace = {{
+    x: {pnl_pcts_json},
+    type: 'histogram',
+    marker: {{color: '#c099ff', line: {{color: '#222436', width: 1}}}},
+    opacity: 0.85
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d',
+    plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: "'JetBrains Mono', monospace", size: 11}},
+    title: {{text: 'P&L Distribution (%)', font: {{color: '#c099ff', size: 14}}}},
+    margin: {{l: 50, r: 30, t: 40, b: 40}},
+    xaxis: {{title: 'P&L %', gridcolor: '#3b4261'}},
+    yaxis: {{title: 'Count', gridcolor: '#3b4261'}}
+  }};
+  Plotly.newPlot('pnl-distribution-chart', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>""")
+
+    # ── 4. Hold Duration Distribution ──
+    hold_bars_vals = [t.get("hold_bars", 0) for t in portfolio_trades if "hold_bars" in t]
+    if hold_bars_vals:
+        hold_json = json.dumps(hold_bars_vals)
+        sections.append(f"""<div class="chart-container">
+<div id="hold-duration-chart" style="width:100%;height:350px;"></div>
+<script>
+(function() {{
+  var trace = {{
+    x: {hold_json},
+    type: 'histogram',
+    marker: {{color: '#4fd6be', line: {{color: '#222436', width: 1}}}},
+    opacity: 0.85
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d',
+    plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: "'JetBrains Mono', monospace", size: 11}},
+    title: {{text: 'Hold Duration Distribution', font: {{color: '#c099ff', size: 14}}}},
+    margin: {{l: 50, r: 30, t: 40, b: 40}},
+    xaxis: {{title: 'Hold Duration (bars)', gridcolor: '#3b4261'}},
+    yaxis: {{title: 'Count', gridcolor: '#3b4261'}}
+  }};
+  Plotly.newPlot('hold-duration-chart', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>""")
+
+    return "\n".join(sections)
 
 
 def generate_html_report(

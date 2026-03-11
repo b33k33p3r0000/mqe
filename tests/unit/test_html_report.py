@@ -19,6 +19,10 @@ from mqe.html_report import (
     _render_s2_params,
     _render_pareto_front,
     _render_s2_optimization_history,
+    _render_pnl_contribution,
+    _render_correlation_heatmap,
+    _render_monthly_returns,
+    _render_trade_analysis,
 )
 
 
@@ -871,3 +875,245 @@ def test_s2_history_div_id(s2_history_data):
 def test_s2_history_empty_trial_numbers():
     html = _render_s2_optimization_history({"trial_numbers": [], "portfolio_calmar_values": [], "best_calmar_so_far": []})
     assert "no-data" in html
+
+
+# ─── PnL Contribution (Task 23) ───
+
+
+@pytest.fixture
+def pnl_per_pair_trades():
+    return {
+        "BTC/USDT": [
+            {"pnl_abs": 5000.0},
+            {"pnl_abs": 3000.0},
+            {"pnl_abs": -1000.0},
+        ],
+        "SOL/USDT": [
+            {"pnl_abs": -2000.0},
+            {"pnl_abs": 1000.0},
+        ],
+        "ETH/USDT": [
+            {"pnl_abs": 4000.0},
+        ],
+    }
+
+
+def test_pnl_contribution_has_plotly(pnl_per_pair_trades):
+    html = _render_pnl_contribution([], pnl_per_pair_trades)
+    assert "Plotly.newPlot" in html
+
+
+def test_pnl_contribution_pair_names(pnl_per_pair_trades):
+    html = _render_pnl_contribution([], pnl_per_pair_trades)
+    assert "BTC/USDT" in html
+    assert "SOL/USDT" in html
+    assert "ETH/USDT" in html
+
+
+def test_pnl_contribution_div_id(pnl_per_pair_trades):
+    html = _render_pnl_contribution([], pnl_per_pair_trades)
+    assert 'id="pnl-contribution-chart"' in html
+
+
+def test_pnl_contribution_empty_data():
+    html = _render_pnl_contribution([], {})
+    assert "no-data" in html
+
+
+def test_pnl_contribution_percentage_labels(pnl_per_pair_trades):
+    html = _render_pnl_contribution([], pnl_per_pair_trades)
+    # Should have percentage labels in output
+    assert "%" in html
+
+
+def test_pnl_contribution_sorted_by_size(pnl_per_pair_trades):
+    html = _render_pnl_contribution([], pnl_per_pair_trades)
+    # BTC has |7000|, ETH has |4000|, SOL has |-1000|
+    # BTC should appear before ETH, ETH before SOL
+    btc_pos = html.index("BTC/USDT")
+    eth_pos = html.index("ETH/USDT")
+    sol_pos = html.index("SOL/USDT")
+    assert btc_pos < eth_pos < sol_pos
+
+
+# ─── Correlation Heatmap (Task 24) ───
+
+
+@pytest.fixture
+def corr_matrix_data():
+    return {
+        "symbols": ["BTC/USDT", "SOL/USDT", "ETH/USDT"],
+        "matrix": [
+            [1.0, 0.65, 0.80],
+            [0.65, 1.0, 0.55],
+            [0.80, 0.55, 1.0],
+        ],
+        "corr_gate_threshold": 0.72,
+    }
+
+
+def test_correlation_heatmap_has_plotly(corr_matrix_data):
+    html = _render_correlation_heatmap(corr_matrix_data)
+    assert "Plotly.newPlot" in html
+
+
+def test_correlation_heatmap_type(corr_matrix_data):
+    html = _render_correlation_heatmap(corr_matrix_data)
+    assert "heatmap" in html
+
+
+def test_correlation_heatmap_threshold(corr_matrix_data):
+    html = _render_correlation_heatmap(corr_matrix_data)
+    assert "0.72" in html
+
+
+def test_correlation_heatmap_div_id(corr_matrix_data):
+    html = _render_correlation_heatmap(corr_matrix_data)
+    assert 'id="correlation-heatmap"' in html
+
+
+def test_correlation_heatmap_empty_data():
+    html = _render_correlation_heatmap({})
+    assert "no-data" in html
+
+
+def test_correlation_heatmap_empty_symbols():
+    html = _render_correlation_heatmap({"symbols": [], "matrix": []})
+    assert "no-data" in html
+
+
+def test_correlation_heatmap_rdbu_colorscale(corr_matrix_data):
+    html = _render_correlation_heatmap(corr_matrix_data)
+    assert "RdBu" in html
+
+
+def test_correlation_heatmap_annotations(corr_matrix_data):
+    html = _render_correlation_heatmap(corr_matrix_data)
+    # Annotation values should be present
+    assert "1.00" in html
+    assert "0.65" in html
+    assert "0.80" in html
+
+
+# ─── Monthly Returns (Task 25) ───
+
+
+@pytest.fixture
+def monthly_trades():
+    return [
+        {"exit_ts": "2025-01-15T10:00:00", "pnl_abs": 2000.0},
+        {"exit_ts": "2025-01-20T10:00:00", "pnl_abs": -500.0},
+        {"exit_ts": "2025-02-10T10:00:00", "pnl_abs": 3000.0},
+        {"exit_ts": "2025-06-05T10:00:00", "pnl_abs": -1000.0},
+        {"exit_ts": "2026-01-08T10:00:00", "pnl_abs": 5000.0},
+    ]
+
+
+def test_monthly_returns_month_headers(monthly_trades):
+    html = _render_monthly_returns(monthly_trades, [])
+    for month in ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]:
+        assert month in html
+
+
+def test_monthly_returns_year_rows(monthly_trades):
+    html = _render_monthly_returns(monthly_trades, [])
+    assert "2025" in html
+    assert "2026" in html
+
+
+def test_monthly_returns_empty_data():
+    html = _render_monthly_returns([], [])
+    assert "no-data" in html
+
+
+def test_monthly_returns_has_year_total(monthly_trades):
+    html = _render_monthly_returns(monthly_trades, [])
+    assert "Year Total" in html
+
+
+def test_monthly_returns_color_styles(monthly_trades):
+    html = _render_monthly_returns(monthly_trades, [])
+    # Positive returns should have green background
+    assert "rgba(195, 232, 141" in html
+    # Negative returns should have red background
+    assert "rgba(255, 117, 127" in html
+
+
+def test_monthly_returns_percentage_values(monthly_trades):
+    html = _render_monthly_returns(monthly_trades, [])
+    # Jan 2025: (2000 - 500) / 100000 * 100 = +1.5%
+    assert "+1.5%" in html
+    # Feb 2025: 3000 / 100000 * 100 = +3.0%
+    assert "+3.0%" in html
+
+
+# ─── Trade Analysis (Task 26) ───
+
+
+@pytest.fixture
+def trade_analysis_trades():
+    return [
+        {"direction": "long", "reason": "trailing_stop", "pnl_abs": 2000.0, "pnl_pct": 2.0, "hold_bars": 24, "entry_ts": "2025-01-01", "exit_ts": "2025-01-02"},
+        {"direction": "long", "reason": "trailing_stop", "pnl_abs": -500.0, "pnl_pct": -0.5, "hold_bars": 12, "entry_ts": "2025-01-03", "exit_ts": "2025-01-04"},
+        {"direction": "short", "reason": "hard_stop", "pnl_abs": -1000.0, "pnl_pct": -1.0, "hold_bars": 6, "entry_ts": "2025-01-05", "exit_ts": "2025-01-06"},
+        {"direction": "long", "reason": "max_hold", "pnl_abs": 500.0, "pnl_pct": 0.5, "hold_bars": 48, "entry_ts": "2025-01-07", "exit_ts": "2025-01-08"},
+        {"direction": "short", "reason": "trailing_stop", "pnl_abs": 3000.0, "pnl_pct": 3.0, "hold_bars": 36, "entry_ts": "2025-01-09", "exit_ts": "2025-01-10"},
+    ]
+
+
+def test_trade_analysis_long_short_cards(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    assert "Long Trades" in html
+    assert "Short Trades" in html
+
+
+def test_trade_analysis_exit_reasons_chart(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    assert 'id="exit-reasons-chart"' in html
+    assert "Plotly.newPlot" in html
+
+
+def test_trade_analysis_pnl_distribution(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    assert 'id="pnl-distribution-chart"' in html
+
+
+def test_trade_analysis_hold_duration(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    assert 'id="hold-duration-chart"' in html
+
+
+def test_trade_analysis_empty_data():
+    html = _render_trade_analysis([], {})
+    assert "no-data" in html
+
+
+def test_trade_analysis_grid_2col(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    assert "grid-2col" in html
+
+
+def test_trade_analysis_long_count(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    # 3 long trades
+    # Check that the long card contains "3"
+    long_idx = html.index("Long Trades")
+    short_idx = html.index("Short Trades")
+    long_section = html[long_idx:short_idx]
+    assert ">3<" in long_section
+
+
+def test_trade_analysis_short_count(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    # 2 short trades
+    short_idx = html.index("Short Trades")
+    short_section = html[short_idx:short_idx + 500]
+    assert ">2<" in short_section
+
+
+def test_trade_analysis_exit_reason_names(trade_analysis_trades):
+    html = _render_trade_analysis(trade_analysis_trades, {})
+    assert "trailing_stop" in html
+    assert "hard_stop" in html
+    assert "max_hold" in html
