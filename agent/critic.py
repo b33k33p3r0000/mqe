@@ -519,3 +519,140 @@ def full(
         "quick_checks": quick_results,
         "llm_context": None,  # Reserved for Task 5
     }
+
+
+# ── CLI ────────────────────────────────────────────────────────────────
+
+def _load_history(history_path: str) -> List[Dict[str, Any]]:
+    """Load history from a JSON file. Returns empty list for /dev/null or missing."""
+    if history_path == "/dev/null":
+        return []
+    p = Path(history_path)
+    if not p.exists():
+        return []
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _quick_result_to_output(
+    results: List[Dict[str, Any]],
+    history: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Convert quick() results to CLI output format with pass/fail summary."""
+    fails = [r for r in results if r["status"] == "FAIL"]
+    warnings = [r for r in results if r["status"] == "WARNING"]
+    passed = len([r for r in results if r["status"] == "PASS"])
+
+    return {
+        "pass": len(fails) == 0,
+        "summary": {
+            "pass": passed,
+            "warn": len(warnings),
+            "fail": len(fails),
+        },
+        "checks": results,
+        "history_entries": len(history),
+    }
+
+
+def _full_result_to_output(
+    result: Dict[str, Any],
+    history: List[Dict[str, Any]],
+    git_diff: str,
+) -> Dict[str, Any]:
+    """Convert full() results to CLI output format."""
+    quick_results = result.get("quick_checks", [])
+    fails = [r for r in quick_results if r["status"] == "FAIL"]
+    warnings = [r for r in quick_results if r["status"] == "WARNING"]
+    passed = len([r for r in quick_results if r["status"] == "PASS"])
+
+    return {
+        "pass": len(fails) == 0,
+        "summary": {
+            "pass": passed,
+            "warn": len(warnings),
+            "fail": len(fails),
+        },
+        "quick_checks": quick_results,
+        "llm_context": result.get("llm_context"),
+        "history_entries": len(history),
+        "git_diff_chars": len(git_diff),
+    }
+
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="MQE Critic — deterministic sanity checks for optimization runs",
+    )
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+
+    # quick subcommand
+    quick_parser = subparsers.add_parser(
+        "quick",
+        help="Run 6 lightweight checks (<1s, no LLM)",
+    )
+    quick_parser.add_argument(
+        "--run-dir",
+        required=True,
+        help="Path to the run directory (must contain evaluation/pipeline.json)",
+    )
+    quick_parser.add_argument(
+        "--history",
+        required=True,
+        help="Path to history.json (JSON array). Use /dev/null for empty.",
+    )
+    quick_parser.add_argument(
+        "--prev-run-dir",
+        default=None,
+        help="Path to previous run directory for score regression check",
+    )
+
+    # full subcommand
+    full_parser = subparsers.add_parser(
+        "full",
+        help="Run full mode checks with LLM context preparation",
+    )
+    full_parser.add_argument(
+        "--run-dir",
+        required=True,
+        help="Path to the run directory (must contain evaluation/pipeline.json)",
+    )
+    full_parser.add_argument(
+        "--history",
+        required=True,
+        help="Path to history.json (JSON array). Use /dev/null for empty.",
+    )
+    full_parser.add_argument(
+        "--git-diff-file",
+        required=True,
+        help="Path to a file containing the git diff for this iteration",
+    )
+    full_parser.add_argument(
+        "--prev-run-dir",
+        default=None,
+        help="Path to previous run directory for score regression check",
+    )
+
+    args = parser.parse_args()
+
+    run_dir = Path(args.run_dir)
+    prev_run_dir = Path(args.prev_run_dir) if args.prev_run_dir else None
+    history = _load_history(args.history)
+
+    if args.mode == "quick":
+        results = quick(run_dir, prev_run_dir=prev_run_dir)
+        output = _quick_result_to_output(results, history)
+        print(json.dumps(output, indent=2))
+
+    elif args.mode == "full":
+        git_diff_path = Path(args.git_diff_file)
+        git_diff = git_diff_path.read_text(encoding="utf-8") if git_diff_path.exists() else ""
+        result = full(run_dir, prev_run_dir=prev_run_dir)
+        output = _full_result_to_output(result, history, git_diff)
+        print(json.dumps(output, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -15,6 +15,7 @@ from critic import (
     check_equity_reconstruction, check_trade_distribution,
     check_hard_stop_ratio, check_score_regression,
     quick, full,
+    _load_history, _quick_result_to_output, _full_result_to_output,
 )
 
 
@@ -672,3 +673,226 @@ class TestQuick:
         results = quick(high_hard_stop_run)
         hs_check = next(r for r in results if r["check"] == "hard_stop_ratio")
         assert hs_check["status"] == "FAIL"
+
+
+# ── Task 6: CLI Tests ─────────────────────────────────────────────────
+
+CRITIC_PY = str(Path(__file__).resolve().parents[2] / "agent" / "critic.py")
+
+
+class TestCLI:
+    def test_quick_outputs_json(self, clean_run, tmp_path):
+        """CLI quick mode outputs valid JSON to stdout."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        data = json.loads(result.stdout)
+        assert isinstance(data, dict)
+
+    def test_quick_output_has_pass_field(self, clean_run, tmp_path):
+        """CLI quick output includes top-level 'pass' field."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file)],
+            capture_output=True,
+            text=True,
+        )
+        data = json.loads(result.stdout)
+        assert "pass" in data
+        assert isinstance(data["pass"], bool)
+
+    def test_quick_clean_run_passes(self, clean_run, tmp_path):
+        """Clean run yields pass=True from CLI."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file)],
+            capture_output=True,
+            text=True,
+        )
+        data = json.loads(result.stdout)
+        assert data["pass"] is True
+
+    def test_quick_overfit_run_fails(self, overfit_run, tmp_path):
+        """Overfit run yields pass=False from CLI."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(overfit_run),
+             "--history", str(history_file)],
+            capture_output=True,
+            text=True,
+        )
+        data = json.loads(result.stdout)
+        assert data["pass"] is False
+
+    def test_quick_output_has_checks_list(self, clean_run, tmp_path):
+        """CLI quick output includes 'checks' list with 6 entries."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file)],
+            capture_output=True,
+            text=True,
+        )
+        data = json.loads(result.stdout)
+        assert "checks" in data
+        assert len(data["checks"]) == 6
+
+    def test_quick_with_devnull_history(self, clean_run):
+        """CLI quick mode accepts /dev/null as history (empty)."""
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(clean_run),
+             "--history", "/dev/null"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["history_entries"] == 0
+
+    def test_quick_with_prev_run_dir(self, score_regression_runs, tmp_path):
+        """CLI quick --prev-run-dir passes previous run for score regression."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+        curr = score_regression_runs["curr"]
+        prev = score_regression_runs["prev"]
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(curr),
+             "--history", str(history_file),
+             "--prev-run-dir", str(prev)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        # Score regressed 82.5 → 71.0 = FAIL → pass=False
+        assert data["pass"] is False
+
+    def test_full_outputs_json(self, clean_run, tmp_path):
+        """CLI full mode outputs valid JSON to stdout."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+        diff_file = tmp_path / "diff.txt"
+        diff_file.write_text("--- a/src/mqe/config.py\n+++ b/src/mqe/config.py\n")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "full",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file),
+             "--git-diff-file", str(diff_file)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr}"
+        data = json.loads(result.stdout)
+        assert isinstance(data, dict)
+
+    def test_full_output_has_quick_checks(self, clean_run, tmp_path):
+        """CLI full output includes 'quick_checks' list."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+        diff_file = tmp_path / "diff.txt"
+        diff_file.write_text("")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "full",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file),
+             "--git-diff-file", str(diff_file)],
+            capture_output=True,
+            text=True,
+        )
+        data = json.loads(result.stdout)
+        assert "quick_checks" in data
+        assert len(data["quick_checks"]) == 6
+
+    def test_full_output_has_git_diff_chars(self, clean_run, tmp_path):
+        """CLI full output includes git_diff_chars count."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+        diff_content = "some diff content"
+        diff_file = tmp_path / "diff.txt"
+        diff_file.write_text(diff_content)
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "full",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file),
+             "--git-diff-file", str(diff_file)],
+            capture_output=True,
+            text=True,
+        )
+        data = json.loads(result.stdout)
+        assert "git_diff_chars" in data
+        assert data["git_diff_chars"] == len(diff_content)
+
+    def test_full_with_missing_diff_file(self, clean_run, tmp_path):
+        """CLI full mode handles missing diff file gracefully (0 chars)."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "full",
+             "--run-dir", str(clean_run),
+             "--history", str(history_file),
+             "--git-diff-file", str(tmp_path / "nonexistent.diff")],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert data["git_diff_chars"] == 0
+
+    def test_quick_missing_run_dir_errors(self, tmp_path):
+        """CLI quick mode exits non-zero for missing run directory."""
+        history_file = tmp_path / "history.json"
+        history_file.write_text("[]")
+
+        result = subprocess.run(
+            [sys.executable, CRITIC_PY, "quick",
+             "--run-dir", str(tmp_path / "nonexistent"),
+             "--history", str(history_file)],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+
+    def test_load_history_devnull_returns_empty(self):
+        """_load_history returns [] for /dev/null."""
+        assert _load_history("/dev/null") == []
+
+    def test_load_history_nonexistent_returns_empty(self, tmp_path):
+        """_load_history returns [] for nonexistent file."""
+        assert _load_history(str(tmp_path / "missing.json")) == []
+
+    def test_load_history_reads_entries(self, tmp_path):
+        """_load_history reads JSON array from file."""
+        h_file = tmp_path / "history.json"
+        h_file.write_text('[{"iteration": 1, "result": "promote"}]')
+        history = _load_history(str(h_file))
+        assert len(history) == 1
+        assert history[0]["iteration"] == 1
