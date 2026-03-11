@@ -132,11 +132,11 @@ def overfit_run(tmp_path):
         _make_trade_row("BTC/USDT", "2025-07-10T10:00:00", "2025-07-10T14:00:00", pnl_usd=5000.0),
         _make_trade_row("BTC/USDT", "2025-10-10T10:00:00", "2025-10-10T14:00:00", pnl_usd=5000.0),
         _make_trade_row("BTC/USDT", "2025-11-10T10:00:00", "2025-11-10T14:00:00", pnl_usd=5000.0),
-        _make_trade_row("ETH/USDT", "2025-01-10T10:00:00", "2025-01-10T14:00:00", symbol="ETH/USDT", pnl_usd=5000.0),
-        _make_trade_row("ETH/USDT", "2025-04-10T10:00:00", "2025-04-10T14:00:00", symbol="ETH/USDT", pnl_usd=5000.0),
-        _make_trade_row("ETH/USDT", "2025-07-10T10:00:00", "2025-07-10T14:00:00", symbol="ETH/USDT", pnl_usd=5000.0),
-        _make_trade_row("ETH/USDT", "2025-10-10T10:00:00", "2025-10-10T14:00:00", symbol="ETH/USDT", pnl_usd=5000.0),
-        _make_trade_row("ETH/USDT", "2025-11-10T10:00:00", "2025-11-10T14:00:00", symbol="ETH/USDT", pnl_usd=5000.0),
+        _make_trade_row("ETH/USDT", "2025-01-10T10:00:00", "2025-01-10T14:00:00", pnl_usd=5000.0),
+        _make_trade_row("ETH/USDT", "2025-04-10T10:00:00", "2025-04-10T14:00:00", pnl_usd=5000.0),
+        _make_trade_row("ETH/USDT", "2025-07-10T10:00:00", "2025-07-10T14:00:00", pnl_usd=5000.0),
+        _make_trade_row("ETH/USDT", "2025-10-10T10:00:00", "2025-10-10T14:00:00", pnl_usd=5000.0),
+        _make_trade_row("ETH/USDT", "2025-11-10T10:00:00", "2025-11-10T14:00:00", pnl_usd=5000.0),
     ]
     _write_csv(eval_dir / "trades.csv", rows)
 
@@ -203,9 +203,9 @@ def equity_mismatch_run(tmp_path):
         _make_trade_row("BTC/USDT", "2025-01-10T10:00:00", "2025-01-10T14:00:00", pnl_usd=22000.0 / 3),
         _make_trade_row("BTC/USDT", "2025-04-10T10:00:00", "2025-04-10T14:00:00", pnl_usd=22000.0 / 3),
         _make_trade_row("BTC/USDT", "2025-07-10T10:00:00", "2025-07-10T14:00:00", pnl_usd=22000.0 / 3),
-        _make_trade_row("ETH/USDT", "2025-01-15T10:00:00", "2025-01-15T14:00:00", symbol="ETH/USDT", pnl_usd=20000.0 / 3),
-        _make_trade_row("ETH/USDT", "2025-04-15T10:00:00", "2025-04-15T14:00:00", symbol="ETH/USDT", pnl_usd=20000.0 / 3),
-        _make_trade_row("ETH/USDT", "2025-07-15T10:00:00", "2025-07-15T14:00:00", symbol="ETH/USDT", pnl_usd=20000.0 / 3),
+        _make_trade_row("ETH/USDT", "2025-01-15T10:00:00", "2025-01-15T14:00:00", pnl_usd=20000.0 / 3),
+        _make_trade_row("ETH/USDT", "2025-04-15T10:00:00", "2025-04-15T14:00:00", pnl_usd=20000.0 / 3),
+        _make_trade_row("ETH/USDT", "2025-07-15T10:00:00", "2025-07-15T14:00:00", pnl_usd=20000.0 / 3),
     ]
     _write_csv(eval_dir / "trades.csv", rows)
 
@@ -372,3 +372,218 @@ class TestDataLoading:
     def test_load_trades_missing_file_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             load_trades(tmp_path / "nonexistent_run")
+
+
+# ── Task 3: Check Function Tests ──────────────────────────────────────
+
+class TestCheckWfDegradation:
+    def test_clean_run_passes(self, clean_run):
+        data = load_run_data(clean_run)
+        result = check_wf_degradation(data)
+        assert result["status"] == "PASS"
+        assert result["check"] == "wf_degradation"
+
+    def test_overfit_run_fails(self, overfit_run):
+        data = load_run_data(overfit_run)
+        result = check_wf_degradation(data)
+        assert result["status"] == "FAIL"
+
+    def test_overfit_result_has_value(self, overfit_run):
+        data = load_run_data(overfit_run)
+        result = check_wf_degradation(data)
+        assert "value" in result
+        assert result["value"] < 0.33
+
+    def test_no_wf_metrics_warns(self, tmp_path):
+        data = {"symbols": ["BTC/USDT"], "total_pnl": 10000.0}
+        result = check_wf_degradation(data)
+        assert result["status"] == "WARNING"
+
+    def test_threshold_in_result(self, overfit_run):
+        data = load_run_data(overfit_run)
+        result = check_wf_degradation(data)
+        assert "threshold" in result
+        assert result["threshold"] == 0.33
+
+
+class TestCheckDdFloorGaming:
+    def test_clean_run_passes(self, clean_run):
+        data = load_run_data(clean_run)
+        result = check_dd_floor_gaming(data)
+        assert result["status"] == "PASS"
+        assert result["check"] == "dd_floor_gaming"
+
+    def test_dd_floor_gaming_run_fails(self, dd_floor_gaming_run):
+        data = load_run_data(dd_floor_gaming_run)
+        result = check_dd_floor_gaming(data)
+        assert result["status"] == "FAIL"
+
+    def test_fail_message_mentions_floor(self, dd_floor_gaming_run):
+        data = load_run_data(dd_floor_gaming_run)
+        result = check_dd_floor_gaming(data)
+        assert "0.05" in result["message"] or "floor" in result["message"].lower()
+
+    def test_no_per_pair_warns(self):
+        data = {"symbols": ["BTC/USDT"], "total_pnl": 10000.0}
+        result = check_dd_floor_gaming(data)
+        assert result["status"] == "WARNING"
+
+    def test_dd_slightly_above_floor_passes(self):
+        # DD at 6% — not near 5% floor
+        data = {
+            "per_pair_results": {
+                "BTC/USDT": {"max_drawdown": 0.06, "total_pnl": 5000.0},
+            }
+        }
+        result = check_dd_floor_gaming(data)
+        assert result["status"] == "PASS"
+
+
+class TestCheckEquityReconstruction:
+    def test_clean_run_passes(self, clean_run):
+        data = load_run_data(clean_run)
+        result = check_equity_reconstruction(data)
+        assert result["status"] == "PASS"
+        assert result["check"] == "equity_reconstruction"
+
+    def test_equity_mismatch_run_fails(self, equity_mismatch_run):
+        data = load_run_data(equity_mismatch_run)
+        result = check_equity_reconstruction(data)
+        assert result["status"] == "FAIL"
+
+    def test_mismatch_value_in_result(self, equity_mismatch_run):
+        data = load_run_data(equity_mismatch_run)
+        result = check_equity_reconstruction(data)
+        assert "value" in result
+        assert result["value"] > 0.05  # >5% mismatch
+
+    def test_no_total_pnl_warns(self):
+        data = {
+            "per_pair_results": {"BTC/USDT": {"total_pnl": 5000.0}},
+        }
+        result = check_equity_reconstruction(data)
+        assert result["status"] == "WARNING"
+
+    def test_no_per_pair_warns(self):
+        data = {"total_pnl": 5000.0}
+        result = check_equity_reconstruction(data)
+        assert result["status"] == "WARNING"
+
+    def test_exact_match_passes(self):
+        data = {
+            "total_pnl": 10000.0,
+            "per_pair_results": {
+                "BTC/USDT": {"total_pnl": 6000.0},
+                "ETH/USDT": {"total_pnl": 4000.0},
+            },
+        }
+        result = check_equity_reconstruction(data)
+        assert result["status"] == "PASS"
+
+
+class TestCheckTradeDistribution:
+    def test_clean_run_passes(self, clean_run):
+        trades = load_trades(clean_run)
+        result = check_trade_distribution(trades)
+        assert result["status"] == "PASS"
+        assert result["check"] == "trade_distribution"
+
+    def test_concentrated_pnl_fails(self, concentrated_pnl_run):
+        trades = load_trades(concentrated_pnl_run)
+        result = check_trade_distribution(trades)
+        # Q1 has 80% of PnL (12000+12000 = 24000 / 30000 = 80%)
+        assert result["status"] in ("FAIL", "WARNING")
+
+    def test_concentrated_pnl_value_above_threshold(self, concentrated_pnl_run):
+        trades = load_trades(concentrated_pnl_run)
+        result = check_trade_distribution(trades)
+        assert "value" in result
+        assert result["value"] > 0.50
+
+    def test_no_trades_warns(self):
+        result = check_trade_distribution([])
+        assert result["status"] == "WARNING"
+
+    def test_result_has_check_name(self, clean_run):
+        trades = load_trades(clean_run)
+        result = check_trade_distribution(trades)
+        assert result["check"] == "trade_distribution"
+
+
+class TestCheckHardStopRatio:
+    def test_clean_run_passes(self, clean_run):
+        trades = load_trades(clean_run)
+        result = check_hard_stop_ratio(trades)
+        assert result["status"] == "PASS"
+        assert result["check"] == "hard_stop_ratio"
+
+    def test_high_hard_stop_run_fails(self, high_hard_stop_run):
+        trades = load_trades(high_hard_stop_run)
+        result = check_hard_stop_ratio(trades)
+        # 4/10 = 40% hard_stop > 30% threshold
+        assert result["status"] == "FAIL"
+
+    def test_fail_result_has_value(self, high_hard_stop_run):
+        trades = load_trades(high_hard_stop_run)
+        result = check_hard_stop_ratio(trades)
+        assert "value" in result
+        assert result["value"] > 0.30
+
+    def test_no_trades_warns(self):
+        result = check_hard_stop_ratio([])
+        assert result["status"] == "WARNING"
+
+    def test_zero_hard_stops_passes(self):
+        trades = [
+            {"symbol": "BTC/USDT", "entry_ts": "2025-01-10T10:00:00",
+             "exit_ts": "2025-01-10T14:00:00", "direction": "long",
+             "entry_price": "50000", "exit_price": "51000",
+             "pnl_usd": "1000", "reason": "signal"},
+            {"symbol": "BTC/USDT", "entry_ts": "2025-02-10T10:00:00",
+             "exit_ts": "2025-02-10T14:00:00", "direction": "long",
+             "entry_price": "50000", "exit_price": "51000",
+             "pnl_usd": "1000", "reason": "trailing_stop"},
+        ]
+        result = check_hard_stop_ratio(trades)
+        assert result["status"] == "PASS"
+        assert result["value"] == 0.0
+
+
+class TestCheckScoreRegression:
+    def test_score_in_run_data_passes_without_prev(self, score_regression_runs):
+        curr_data = load_run_data(score_regression_runs["curr"])
+        result = check_score_regression(curr_data)
+        # No prev_score → PASS with note about no comparison
+        assert result["status"] == "PASS"
+        assert result["check"] == "score_regression"
+
+    def test_regression_with_prev_score_fails(self, score_regression_runs):
+        curr_data = load_run_data(score_regression_runs["curr"])
+        prev_data = load_run_data(score_regression_runs["prev"])
+        prev_score = prev_data["resilience_score"]  # 82.5
+        result = check_score_regression(curr_data, prev_score=prev_score)
+        # 71.0 vs 82.5 = -11.5 delta → FAIL
+        assert result["status"] == "FAIL"
+
+    def test_skip_when_both_explicit_and_current_lower(self):
+        # When both params provided and current <= prev, skip
+        data = {"resilience_score": 75.0}
+        result = check_score_regression(data, current_score=75.0, prev_score=80.0)
+        assert result["status"] == "SKIP"
+
+    def test_no_score_warns(self):
+        data = {"symbols": ["BTC/USDT"]}
+        result = check_score_regression(data)
+        assert result["status"] == "WARNING"
+
+    def test_improvement_passes(self):
+        data = {"resilience_score": 85.0}
+        result = check_score_regression(data, prev_score=80.0)
+        assert result["status"] == "PASS"
+        assert result["value"] == 85.0
+
+    def test_minor_regression_warns(self):
+        data = {"resilience_score": 78.0}
+        result = check_score_regression(data, prev_score=80.0)
+        # -2.0 delta → WARNING (< 0 but > -5)
+        assert result["status"] == "WARNING"
