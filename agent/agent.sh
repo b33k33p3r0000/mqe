@@ -160,7 +160,7 @@ cleanup_old_branches() {
 # ── Discord Notifications ────────────────────────────────────────────
 load_webhook() {
     if [[ -f "$MQE_DIR/.env" ]]; then
-        DISCORD_WEBHOOK=$(grep -E '^DISCORD_WEBHOOK_RUNS=' "$MQE_DIR/.env" \
+        DISCORD_WEBHOOK=$(grep -E '^DISCORD_WEBHOOK_MQE_RUNS=' "$MQE_DIR/.env" \
             | cut -d'=' -f2- | tr -d '"' | tr -d "'")
     fi
     DISCORD_WEBHOOK="${DISCORD_WEBHOOK:-}"
@@ -610,6 +610,8 @@ main() {
             set_state "total_rollbacks" "$(($(get_state total_rollbacks 0) + 1))"
             continue
         fi
+
+        set_state "consecutive_crashes" "0"
 
         local val_dir
         val_dir=$(find_latest_results)
