@@ -30,6 +30,7 @@ ignore = ["E402", "E741", "E722"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 markers = [
     "integration: marks tests as integration tests",
     "slow: marks tests as slow",

@@ -162,6 +162,71 @@ def build_portfolio_objective(
     return objective
 
 
+# ─── EXPORT HELPERS ────────────────────────────────────────────────────────
+
+
+def extract_pareto_front(
+    study: optuna.Study,
+    selected_trial_number: int,
+) -> dict[str, Any]:
+    """Extract Pareto front trials for visualization."""
+    best_trials = study.best_trials
+    trials = []
+    for t in best_trials:
+        trials.append({
+            "number": t.number,
+            "params": {k: round(v, 6) if isinstance(v, float) else v
+                       for k, v in t.params.items()},
+            "objectives": {
+                "portfolio_calmar": round(t.values[0], 4),
+                "worst_pair_calmar": round(t.values[1], 4),
+                "neg_overfit_penalty": round(t.values[2], 4),
+            },
+        })
+    return {
+        "selected_trial": selected_trial_number,
+        "trials": trials,
+    }
+
+
+def extract_s2_history(
+    study: optuna.Study,
+    max_points: int = 2000,
+) -> dict[str, list]:
+    """Extract S2 trial progression for optimization history chart."""
+    trials = study.trials
+    n = len(trials)
+
+    numbers = []
+    calmar_values = []
+    for t in trials:
+        numbers.append(t.number)
+        if t.state == optuna.trial.TrialState.COMPLETE and t.values:
+            calmar_values.append(round(t.values[0], 6))
+        else:
+            calmar_values.append(0.0)
+
+    best_so_far = []
+    running_best = float("-inf")
+    for v in calmar_values:
+        running_best = max(running_best, v)
+        best_so_far.append(round(running_best, 6))
+
+    if n > max_points:
+        indices = list(range(0, n, n // max_points))[:max_points]
+        if indices[-1] != n - 1:
+            indices.append(n - 1)
+        numbers = [numbers[i] for i in indices]
+        calmar_values = [calmar_values[i] for i in indices]
+        best_so_far = [best_so_far[i] for i in indices]
+
+    return {
+        "trial_numbers": numbers,
+        "portfolio_calmar_values": calmar_values,
+        "best_calmar_so_far": best_so_far,
+    }
+
+
 # ─── PROGRESS CALLBACK ─────────────────────────────────────────────────────
 
 
@@ -303,6 +368,23 @@ def run_stage2(
         "Stage 2: Done. Pareto front=%d, best portfolio_calmar=%.4f",
         len(best_trials), best.values[0],
     )
+
+    # ── Export data for HTML report ──────────────────────────────────
+    if output_dir is not None:
+        # json is already imported at module level
+        pareto_data = extract_pareto_front(study, best.number)
+        pareto_path = Path(output_dir) / "evaluation" / "pareto_front.json"
+        pareto_path.parent.mkdir(parents=True, exist_ok=True)
+        pareto_path.write_text(
+            json.dumps(pareto_data, indent=2), encoding="utf-8"
+        )
+
+        s2_history = extract_s2_history(study, max_points=2000)
+        history_path = Path(output_dir) / "evaluation" / "s2_history.json"
+        history_path.write_text(
+            json.dumps(s2_history, indent=2), encoding="utf-8"
+        )
+        logger.info("Exported S2 Pareto front (%d trials) + history", len(pareto_data["trials"]))
 
     return {
         "portfolio_params": dict(best.params),
