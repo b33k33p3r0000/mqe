@@ -52,6 +52,7 @@ Process management:
   ./run.sh logs            List recent log files
   ./run.sh monitor         Live dashboard for active run
   ./run.sh monitor --once  Single snapshot
+  ./run.sh ticker          Scrolling ticker (stack below news_ticker.py)
   ./run.sh resume          Resume latest incomplete run (Stage 2+)
   ./run.sh resume PATH     Resume specific run directory
 
@@ -203,6 +204,10 @@ if [[ $# -gt 0 ]]; then
                 MONITOR_ARGS="--live"
             fi
             exec uv run python -m mqe.monitor --results-dir "$SCRIPT_DIR/results" $MONITOR_ARGS
+            ;;
+        ticker)
+            shift
+            exec python3 "$HOME/projects/scripts/mqe_ticker.py" --results-dir "$SCRIPT_DIR/results" "$@"
             ;;
         resume)
             shift

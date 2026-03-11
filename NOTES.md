@@ -107,3 +107,17 @@ Full MQE (Multi-pair Quant Engine) implementation from scratch — 18 TDD tasks,
 - `run.sh`: Odstraněn `--s1-trials` z CLI, presetů, banneru. S1 trials plně automatické přes `compute_trials()`.
 
 **Tiers:** <2.5yr = 35k, >=2.5yr = 50k, >=4.5yr = 65k trials per pair.
+
+---
+
+## 2026-03-11 — HTML Report
+
+### Uděláno
+- **html_report.py** (1756 řádků): Self-contained interactive HTML report s Plotly charts, Tokyonight dark theme
+- **18 sekcí**: Hero metrics, portfolio equity curve, concurrent positions, per-pair table, per-pair equity curves, tier assignments, WF evaluation, S1 params table, S1 bullet chart, S1 top trials, S1 optimization history, S2 params card, Pareto front scatter, S2 optimization history, PnL contribution, correlation heatmap, monthly returns, trade analysis
+- **Pipeline data exports**: S1 top trials + history (stage1.py), S2 Pareto front + history (stage2.py), correlation matrix (optimize.py)
+- **Pipeline integration**: `run_final_evaluation()` exposes raw PortfolioResult data, HTML report voláno z obou `run_pipeline()` i `resume_pipeline()`
+- **173 testů**, all passing
+
+### Výstup
+`results/{TIMESTAMP}/report.html` — generuje se automaticky na konci každého runu.
