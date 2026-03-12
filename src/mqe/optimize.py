@@ -40,12 +40,17 @@ from mqe.config import (
     MIN_WARMUP_BARS,
     STARTING_EQUITY,
     SYMBOLS,
+    PBO_DEMOTE_THRESHOLD,
+    PBO_N_PARAM_SETS,
+    PBO_N_SUBSETS,
+    PBO_TIER_X_THRESHOLD,
     TIER_MULTIPLIERS,
     TIER_THRESHOLDS,
     TRIALS_LONG,
 )
 from mqe.core.backtest import simulate_trades_fast
 from mqe.core.garch import garch_conditional_vol
+from mqe.core.pbo import apply_pbo_override, run_pbo_for_pair
 from mqe.core.metrics import MetricsResult, calculate_metrics
 from mqe.core.portfolio import PortfolioResult, PortfolioSimulator
 from mqe.core.strategy import MultiPairStrategy
@@ -199,6 +204,76 @@ def assign_tiers_enhanced(
             "worst_sharpe": worst_sharpe,
         }
     return tiers
+
+
+def run_pbo_evaluation(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    pair_params: dict[str, dict[str, Any]],
+    tier_assignments: dict[str, dict[str, Any]],
+    output_dir: Path,
+    garch_arrays: dict[str, tuple] | None = None,
+    n_param_sets: int = PBO_N_PARAM_SETS,
+    n_subsets: int = PBO_N_SUBSETS,
+) -> dict[str, Any]:
+    """Run PBO evaluation for all pairs in parallel."""
+    logger.info("PBO evaluation: %d pairs, %d param sets, %d subsets",
+                len(pair_params), n_param_sets, n_subsets)
+
+    pbo_results: dict[str, Any] = {}
+
+    with ProcessPoolExecutor() as executor:
+        futures = {}
+        for symbol in pair_params:
+            vol_ratio = (
+                garch_arrays[symbol][0]
+                if garch_arrays and symbol in garch_arrays
+                else None
+            )
+            future = executor.submit(
+                run_pbo_for_pair, symbol, all_data[symbol],
+                pair_params[symbol], n_param_sets, n_subsets,
+                garch_vol_ratio=vol_ratio,
+            )
+            futures[future] = symbol
+
+        for future in as_completed(futures):
+            symbol = futures[future]
+            try:
+                result = future.result()
+                pbo_results[symbol] = {
+                    "pbo_score": result.pbo_score,
+                    "logit_pbo": result.logit_pbo,
+                    "n_combinations": result.n_combinations,
+                    "wf_tier": tier_assignments.get(symbol, {}).get("tier", "X"),
+                    "pbo_action": (
+                        "excluded" if result.pbo_score > PBO_TIER_X_THRESHOLD
+                        else "demoted" if result.pbo_score > PBO_DEMOTE_THRESHOLD
+                        else "no_change"
+                    ),
+                }
+                # Apply tier override
+                old_tier = tier_assignments[symbol]["tier"]
+                new_tier = apply_pbo_override(old_tier, result.pbo_score)
+                if new_tier != old_tier:
+                    tier_assignments[symbol]["tier"] = new_tier
+                    tier_assignments[symbol]["multiplier"] = TIER_MULTIPLIERS[new_tier]
+                    logger.warning(
+                        "PBO override: %s %s -> %s (PBO %.2f)",
+                        symbol, old_tier, new_tier, result.pbo_score,
+                    )
+                pbo_results[symbol]["final_tier"] = new_tier
+                logger.info(
+                    "PBO [%s]: %.2f (%s)",
+                    symbol, result.pbo_score, pbo_results[symbol]["pbo_action"],
+                )
+            except Exception as e:
+                logger.error("PBO failed for %s: %s", symbol, e)
+                pbo_results[symbol] = {"pbo_score": -1, "error": str(e)}
+
+    eval_dir = output_dir / "evaluation"
+    eval_dir.mkdir(exist_ok=True)
+    save_json(eval_dir / "pbo_results.json", pbo_results)
+    return pbo_results
 
 
 def run_per_pair_evaluation(
@@ -716,6 +791,16 @@ def run_pipeline(
         "Tiers: %d active, %d excluded (Tier X)", active_count, excluded_count,
     )
 
+    # ── 5b. PBO evaluation (statistical overfit detection) ──
+    pbo_results = run_pbo_evaluation(
+        all_data, pair_params, tier_assignments, output_dir,
+        garch_arrays=garch_arrays,
+    )
+    # Update tier_multipliers after PBO overrides
+    tier_multipliers = {
+        sym: info["multiplier"] for sym, info in tier_assignments.items()
+    }
+
     # ── 6. Per-pair evaluation (full data for reporting) ──
     per_pair_metrics = run_per_pair_evaluation(
         all_data, pair_signals, pair_params, output_dir,
@@ -765,6 +850,7 @@ def run_pipeline(
         "stage2_results": stage2_result,
         "tier_assignments": tier_assignments,
         "wf_eval_metrics": wf_metrics,
+        "pbo_results": pbo_results,
     }
     save_json(output_dir / "pipeline_result.json", combined)
 
@@ -951,6 +1037,16 @@ def resume_pipeline(
     excluded_count = sum(1 for t in tier_assignments.values() if t["tier"] == "X")
     logger.info("Tiers: %d active, %d excluded (Tier X)", active_count, excluded_count)
 
+    # ── 6b. PBO evaluation (statistical overfit detection) ──
+    pbo_results = run_pbo_evaluation(
+        all_data, pair_params, tier_assignments, output_dir,
+        garch_arrays=garch_arrays,
+    )
+    # Update tier_multipliers after PBO overrides
+    tier_multipliers = {
+        sym: info["multiplier"] for sym, info in tier_assignments.items()
+    }
+
     # ── 7. Per-pair evaluation (full data for reporting) ──
     per_pair_metrics = run_per_pair_evaluation(
         all_data, pair_signals, pair_params, output_dir,
@@ -1005,6 +1101,7 @@ def resume_pipeline(
         "stage2_results": stage2_result,
         "tier_assignments": tier_assignments,
         "wf_eval_metrics": wf_metrics,
+        "pbo_results": pbo_results,
     }
     save_json(output_dir / "pipeline_result.json", combined)
 
