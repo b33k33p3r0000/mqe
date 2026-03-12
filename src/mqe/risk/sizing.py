@@ -30,6 +30,8 @@ def compute_position_size(
     atr_dict: dict[str, float],
     corr_dict: dict[str, dict[str, float]],
     tier_multiplier: float = 1.0,
+    vol_ratio: float = 1.0,
+    vol_sensitivity: float = 1.0,
 ) -> float:
     """
     Compute position size for a symbol.
@@ -63,6 +65,9 @@ def compute_position_size(
             if open_sym in corr_dict[symbol]:
                 if abs(corr_dict[symbol][open_sym]) > CORRELATION_GATE_THRESHOLD:
                     weight *= CORRELATION_HAIRCUT_FACTOR
+
+    # Step 3.5: GARCH volatility adjustment
+    weight *= vol_ratio * vol_sensitivity
 
     # Step 4: OI/MC danger penalty
     profile = PAIR_PROFILES.get(symbol, {})

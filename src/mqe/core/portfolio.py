@@ -109,6 +109,7 @@ class PortfolioSimulator:
         corr_matrix: dict[str, dict[str, float]] | None = None,
         corr_gate_threshold: float = CORRELATION_GATE_THRESHOLD,
         tier_multipliers: dict[str, float] | None = None,
+        garch_arrays: dict[str, tuple] | None = None,
     ) -> None:
         self.pair_data = pair_data
         self.pair_signals = pair_signals
@@ -120,6 +121,7 @@ class PortfolioSimulator:
         self.corr_matrix = corr_matrix or {}
         self.corr_gate_threshold = corr_gate_threshold
         self.tier_multipliers = tier_multipliers or {}
+        self.garch_arrays = garch_arrays or {}
 
         # Pre-extract base TF arrays per pair for fast bar access
         self.symbols = list(pair_data.keys())
@@ -454,9 +456,21 @@ class PortfolioSimulator:
                     for s in self.symbols
                 }
                 open_pair_list = [p.symbol for p in open_positions]
+
+                # Extract GARCH vol_ratio for this bar
+                _vol_ratio = 1.0
+                _vol_sens = 1.0
+                if sym in self.garch_arrays:
+                    _vr_arr = self.garch_arrays[sym][0]
+                    if bar < len(_vr_arr):
+                        _vol_ratio = float(_vr_arr[bar])
+                    _vol_sens = float(self.pair_params.get(sym, {}).get("vol_sensitivity", 1.0))
+
                 capital = compute_position_size(
                     sym, open_pair_list, cash, atr_dict, self.corr_matrix,
                     tier_multiplier=self.tier_multipliers.get(sym, 1.0),
+                    vol_ratio=_vol_ratio,
+                    vol_sensitivity=_vol_sens,
                 )
                 if capital <= 0:
                     continue

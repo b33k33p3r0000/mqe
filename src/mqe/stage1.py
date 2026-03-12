@@ -248,6 +248,7 @@ def build_objective(
     data: dict[str, pd.DataFrame],
     splits: list[dict[str, float]],
     allow_flip_setting: int = 0,
+    garch_vol_ratio: np.ndarray | None = None,
 ) -> Callable:
     """Build Optuna objective function for AWF optimization.
 
@@ -287,6 +288,7 @@ def build_objective(
         hard_stop_mult = float(params.get("hard_stop_mult", 2.5))
         trail_mult = float(params.get("trail_mult", 3.0))
         max_hold_bars = int(params.get("max_hold_bars", 168))
+        vol_sensitivity = float(params.get("vol_sensitivity", 1.0))
 
         split_scores: list[float] = []
         _sharpes: list[float] = []
@@ -309,6 +311,8 @@ def build_objective(
                 hard_stop_mult=hard_stop_mult,
                 trail_mult=trail_mult,
                 max_hold_bars=max_hold_bars,
+                vol_ratio=garch_vol_ratio,
+                vol_sensitivity=vol_sensitivity,
             )
             if not train_result.trades:
                 split_scores.append(0.0)
@@ -333,6 +337,8 @@ def build_objective(
                 hard_stop_mult=hard_stop_mult,
                 trail_mult=trail_mult,
                 max_hold_bars=max_hold_bars,
+                vol_ratio=garch_vol_ratio,
+                vol_sensitivity=vol_sensitivity,
             )
 
             # Hard constraint: minimum test trades
@@ -536,6 +542,7 @@ def run_stage1_pair(
     progress_interval: int = 100,
     n_jobs: int = 1,
     ceiling: float = 1.0,
+    garch_vol_ratio: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Run Stage 1 optimization for a single pair.
 
@@ -599,7 +606,7 @@ def run_stage1_pair(
     study.set_user_attr("stage", 1)
 
     # Build objective and run
-    objective = build_objective(symbol, data, splits, allow_flip_setting=allow_flip)
+    objective = build_objective(symbol, data, splits, allow_flip_setting=allow_flip, garch_vol_ratio=garch_vol_ratio)
 
     callbacks: list[Any] = []
     if output_dir is not None:
