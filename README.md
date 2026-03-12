@@ -490,7 +490,7 @@ compute_position_size(symbol, open_pairs, equity, atr_dict, corr_dict)
 
 ---
 
-## Pairs (20 symbols)
+## Pairs (15 symbols)
 
 | Pair | Tier | Cluster | BTC Corr | Slippage |
 |------|------|---------|----------|----------|
@@ -501,19 +501,16 @@ compute_position_size(symbol, open_pairs, equity, atr_dict, corr_dict)
 | BNB/USDT | A | exchange | 0.84 | 12 bps |
 | LINK/USDT | A | narrative | 0.78 | 18 bps |
 | SUI/USDT | A- | smart_contract_l1 | 0.69 | 22 bps |
-| AVAX/USDT | A- | smart_contract_l1 | 0.72 | 20 bps |
-| DOT/USDT | B+ | smart_contract_l1 | 0.75 | 20 bps |
 | ADA/USDT | B+ | smart_contract_l1 | 0.80 | 20 bps |
 | DOGE/USDT | B+ | meme | 0.65 | 15 bps |
 | NEAR/USDT | B | smart_contract_l1 | 0.73 | 25 bps |
-| LTC/USDT | B | blue_chip | 0.84 | 15 bps |
 | APT/USDT | B | smart_contract_l1 | 0.73 | 25 bps |
-| ATOM/USDT | B | cosmos | 0.70 | 22 bps |
 | FIL/USDT | B | storage | 0.65 | 25 bps |
-| UNI/USDT | B | defi | 0.72 | 22 bps |
 | ARB/USDT | B- | l2 | 0.76 | 30 bps |
 | OP/USDT | B- | l2 | 0.76 | 30 bps |
 | INJ/USDT | B- | narrative | 0.69 | 35 bps |
+
+Removed (persistently unviable WF): LTC, ATOM, UNI, AVAX, DOT.
 
 Per-tier search spaces — S-tier allows `allow_flip: (0,1)`, all other tiers force `allow_flip: (0,0)`. Lower tiers have progressively tighter parameter ranges.
 

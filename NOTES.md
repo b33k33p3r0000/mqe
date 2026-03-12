@@ -124,6 +124,26 @@ Full MQE (Multi-pair Quant Engine) implementation from scratch — 18 TDD tasks,
 
 ---
 
+## 2026-03-12 — /analyze 20260310_191420 — Post-Analysis Improvements
+
+**Verdict:** LOW — 20-pair run odhalil 3 systémové problémy: S2 objective gaming (heat 9.6% → inflated Calmar 14.77), inflated pair universe (7/20 failed WF), nedostatečná WF validace (2 okna).
+
+**Implementované změny (Batch 1-3):**
+- [x] B1: S2 portfolio_heat range 0.03-0.10 → 0.15-0.50 (anti-gaming floor)
+- [x] B1: Pareto selection — normalized weighted score (0.6 calmar + 0.4 worst_pair) místo max calmar
+- [x] B1: Tier C degradation floor 0.10 (DOT-type páry s 1.7% retention excluded)
+- [x] B1: Odstraněna dead code overfit penalty (portfolio_heat < 0.035)
+- [x] B2: Universe 20 → 15 párů (odstraněny LTC, ATOM, UNI, AVAX, DOT)
+- [x] B3: WF_EVAL_N_WINDOWS_MEDIUM 2 → 3
+
+**Deferred:**
+- B4: Exit system improvements — separate session
+
+Full analysis: `docs/analyze/2026-03-12-mqe-20pair-20260310_191420.md`
+Design spec: `docs/plans/2026-03-12-mqe-post-analysis-improvements.md`
+
+---
+
 ## 2026-03-12 — Agent removal
 
 ### Co se stalo

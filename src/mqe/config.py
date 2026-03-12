@@ -19,11 +19,9 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 SYMBOLS = [
     "BTC/USDT", "ETH/USDT", "SOL/USDT",
     "XRP/USDT", "BNB/USDT", "LINK/USDT",
-    "SUI/USDT", "DOT/USDT", "ADA/USDT",
-    "NEAR/USDT", "LTC/USDT", "APT/USDT",
-    "ARB/USDT", "OP/USDT", "INJ/USDT",
-    "AVAX/USDT", "DOGE/USDT", "ATOM/USDT",
-    "FIL/USDT", "UNI/USDT",
+    "SUI/USDT", "ADA/USDT", "APT/USDT",
+    "NEAR/USDT", "ARB/USDT", "OP/USDT",
+    "INJ/USDT", "DOGE/USDT", "FIL/USDT",
 ]
 TREND_TFS = ["4h", "8h", "1d"]
 BASE_TF = "1h"
@@ -47,19 +45,14 @@ SLIPPAGE_MAP: dict[str, float] = {
     "BNB/USDT": 0.0012,
     "LINK/USDT": 0.0018,
     "SUI/USDT": 0.0022,
-    "DOT/USDT": 0.0020,
     "ADA/USDT": 0.0020,
     "NEAR/USDT": 0.0025,
-    "LTC/USDT": 0.0015,
     "APT/USDT": 0.0025,
     "ARB/USDT": 0.0030,
     "OP/USDT": 0.0030,
     "INJ/USDT": 0.0035,
-    "AVAX/USDT": 0.0020,
     "DOGE/USDT": 0.0015,
-    "ATOM/USDT": 0.0022,
     "FIL/USDT": 0.0025,
-    "UNI/USDT": 0.0022,
 }
 DEFAULT_SLIPPAGE = float(os.environ.get("SLIPPAGE", "0.0015"))
 
@@ -141,16 +134,6 @@ PAIR_PROFILES: dict[str, dict] = {
         "oi_mc_ratio": 0.08,
         "volume_24h_min": 0.15e9,
     },
-    "DOT/USDT": {
-        "tier": "B+",
-        "cluster": "smart_contract_l1",
-        "btc_corr": 0.75,
-        "ann_vol": 0.85,
-        "atr_1h_pct": 0.009,
-        "slippage_bps": 20,
-        "oi_mc_ratio": 0.04,
-        "volume_24h_min": 0.12e9,
-    },
     "ADA/USDT": {
         "tier": "B+",
         "cluster": "smart_contract_l1",
@@ -169,16 +152,6 @@ PAIR_PROFILES: dict[str, dict] = {
         "atr_1h_pct": 0.011,
         "slippage_bps": 25,
         "oi_mc_ratio": 0.07,
-        "volume_24h_min": 0.1e9,
-    },
-    "LTC/USDT": {
-        "tier": "B",
-        "cluster": "blue_chip",
-        "btc_corr": 0.84,
-        "ann_vol": 0.65,
-        "atr_1h_pct": 0.007,
-        "slippage_bps": 15,
-        "oi_mc_ratio": 0.03,
         "volume_24h_min": 0.1e9,
     },
     "APT/USDT": {
@@ -221,16 +194,6 @@ PAIR_PROFILES: dict[str, dict] = {
         "oi_mc_ratio": 0.10,
         "volume_24h_min": 0.05e9,
     },
-    "AVAX/USDT": {
-        "tier": "A-",
-        "cluster": "smart_contract_l1",
-        "btc_corr": 0.72,
-        "ann_vol": 0.90,
-        "atr_1h_pct": 0.010,
-        "slippage_bps": 20,
-        "oi_mc_ratio": 0.10,
-        "volume_24h_min": 0.2e9,
-    },
     "DOGE/USDT": {
         "tier": "B+",
         "cluster": "meme",
@@ -241,16 +204,6 @@ PAIR_PROFILES: dict[str, dict] = {
         "oi_mc_ratio": 0.04,
         "volume_24h_min": 0.5e9,
     },
-    "ATOM/USDT": {
-        "tier": "B",
-        "cluster": "cosmos",
-        "btc_corr": 0.70,
-        "ann_vol": 0.75,
-        "atr_1h_pct": 0.008,
-        "slippage_bps": 22,
-        "oi_mc_ratio": 0.05,
-        "volume_24h_min": 0.1e9,
-    },
     "FIL/USDT": {
         "tier": "B",
         "cluster": "storage",
@@ -260,16 +213,6 @@ PAIR_PROFILES: dict[str, dict] = {
         "slippage_bps": 25,
         "oi_mc_ratio": 0.07,
         "volume_24h_min": 0.08e9,
-    },
-    "UNI/USDT": {
-        "tier": "B",
-        "cluster": "defi",
-        "btc_corr": 0.72,
-        "ann_vol": 0.85,
-        "atr_1h_pct": 0.010,
-        "slippage_bps": 22,
-        "oi_mc_ratio": 0.06,
-        "volume_24h_min": 0.1e9,
     },
 }
 
@@ -283,15 +226,13 @@ def get_cluster(symbol: str) -> str:
 # ─── CLUSTER DEFINITIONS ────────────────────────────────────────────────────
 
 CLUSTER_DEFINITIONS: dict[str, list[str]] = {
-    "blue_chip": ["BTC/USDT", "LTC/USDT"],
-    "smart_contract_l1": ["ETH/USDT", "SOL/USDT", "ADA/USDT", "DOT/USDT",
-                          "NEAR/USDT", "APT/USDT", "SUI/USDT", "AVAX/USDT"],
+    "blue_chip": ["BTC/USDT"],
+    "smart_contract_l1": ["ETH/USDT", "SOL/USDT", "ADA/USDT",
+                          "NEAR/USDT", "APT/USDT", "SUI/USDT"],
     "l2": ["ARB/USDT", "OP/USDT"],
     "exchange": ["BNB/USDT"],
     "narrative": ["XRP/USDT", "LINK/USDT", "INJ/USDT"],
     "meme": ["DOGE/USDT"],
-    "cosmos": ["ATOM/USDT"],
-    "defi": ["UNI/USDT"],
     "storage": ["FIL/USDT"],
 }
 
@@ -302,8 +243,6 @@ CLUSTER_MAX_CONCURRENT: dict[str, int] = {
     "exchange": 1,
     "narrative": 2,
     "meme": 1,
-    "cosmos": 1,
-    "defi": 1,
     "storage": 1,
 }
 
@@ -475,12 +414,13 @@ WF_EVAL_CEILING_LONG = 0.70       # S1 trains on first 70% (>= 3yr data)
 WF_EVAL_CEILING_MEDIUM = 0.75     # 75% (1.5-3yr data)
 WF_EVAL_CEILING_SHORT = 0.80      # 80% (< 1.5yr data)
 WF_EVAL_N_WINDOWS_LONG = 3        # 3 eval windows for long data
-WF_EVAL_N_WINDOWS_MEDIUM = 2      # 2 for medium
+WF_EVAL_N_WINDOWS_MEDIUM = 3      # 3 for medium
 WF_EVAL_N_WINDOWS_SHORT = 1       # 1 for short (single holdout)
 
 # Enhanced tiering thresholds
 TIER_DEGRADATION_A = 0.5          # min S1/OOS ratio for A tier
 TIER_DEGRADATION_B = 0.3          # min S1/OOS ratio for B tier
+TIER_DEGRADATION_C = 0.10         # min S1/OOS ratio for C tier
 TIER_CONSISTENCY_A = 1.5          # max Sharpe std for A tier
 TIER_WORST_WINDOW_A = 0.5         # min worst OOS window Sharpe for A tier
 TIER_WORST_WINDOW_B = -0.2        # min worst OOS window Sharpe for B tier

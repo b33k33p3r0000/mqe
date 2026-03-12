@@ -78,7 +78,7 @@ def build_portfolio_objective(
             "max_concurrent", min(3, n_pairs), min(n_pairs, 10)
         )
         cluster_max = trial.suggest_int("cluster_max", 1, 3)
-        portfolio_heat = trial.suggest_float("portfolio_heat", 0.03, 0.10)
+        portfolio_heat = trial.suggest_float("portfolio_heat", 0.15, 0.50)
         corr_gate_threshold = trial.suggest_float("corr_gate_threshold", 0.50, 0.80)
 
         # Build cluster_max dict from the single optimized value
@@ -148,8 +148,6 @@ def build_portfolio_objective(
         # Penalize extreme parameter values that suggest overfitting
         if max_concurrent <= 1:
             overfit_penalty += 0.5  # too restrictive — may overfit to single best pair
-        if portfolio_heat < 0.035:
-            overfit_penalty += 0.3  # too tight heat — may overfit to low-vol regime
         if corr_gate_threshold < 0.55:
             overfit_penalty += 0.2  # too loose gate — no real filtering
 
@@ -361,8 +359,24 @@ def run_stage2(
             "pareto_front_size": 0,
         }
 
-    # Pick trial with best portfolio Calmar (objective 0) from Pareto front
-    best = max(best_trials, key=lambda t: t.values[0])
+    # Pick trial with best normalized weighted score from Pareto front
+    # Score = 0.6 * norm_portfolio_calmar + 0.4 * norm_worst_pair_calmar
+    calmar_vals = [t.values[0] for t in best_trials]
+    worst_vals = [t.values[1] for t in best_trials]
+    calmar_min, calmar_max = min(calmar_vals), max(calmar_vals)
+    worst_min, worst_max = min(worst_vals), max(worst_vals)
+    calmar_range = calmar_max - calmar_min if calmar_max != calmar_min else 1.0
+    worst_range = worst_max - worst_min if worst_max != worst_min else 1.0
+
+    best_score = -float("inf")
+    best = best_trials[0]
+    for t in best_trials:
+        norm_calmar = (t.values[0] - calmar_min) / calmar_range
+        norm_worst = (t.values[1] - worst_min) / worst_range
+        score = 0.6 * norm_calmar + 0.4 * norm_worst
+        if score > best_score:
+            best_score = score
+            best = t
 
     logger.info(
         "Stage 2: Done. Pareto front=%d, best portfolio_calmar=%.4f",

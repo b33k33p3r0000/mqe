@@ -139,6 +139,7 @@ def assign_tiers_enhanced(
     from mqe.config import (
         TIER_DEGRADATION_A,
         TIER_DEGRADATION_B,
+        TIER_DEGRADATION_C,
         TIER_CONSISTENCY_A,
         TIER_WORST_WINDOW_A,
         TIER_WORST_WINDOW_B,
@@ -167,6 +168,7 @@ def assign_tiers_enhanced(
         elif (
             median_sharpe >= TIER_THRESHOLDS["C"]
             and worst_sharpe >= TIER_WORST_WINDOW_C
+            and degradation >= TIER_DEGRADATION_C
         ):
             tier = "C"
         else:

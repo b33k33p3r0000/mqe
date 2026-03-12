@@ -10,7 +10,7 @@ cd "$SCRIPT_DIR"
 # CONSTANTS
 # =============================================================================
 
-ALL_PAIRS="BTC/USDT ETH/USDT SOL/USDT XRP/USDT BNB/USDT LINK/USDT SUI/USDT DOT/USDT ADA/USDT NEAR/USDT LTC/USDT APT/USDT ARB/USDT OP/USDT INJ/USDT AVAX/USDT DOGE/USDT ATOM/USDT FIL/USDT UNI/USDT"
+ALL_PAIRS="BTC/USDT ETH/USDT SOL/USDT XRP/USDT BNB/USDT LINK/USDT SUI/USDT ADA/USDT APT/USDT NEAR/USDT ARB/USDT OP/USDT INJ/USDT DOGE/USDT FIL/USDT"
 
 # =============================================================================
 # HELP
@@ -283,8 +283,8 @@ if [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
     echo "==========================="
     echo ""
     echo "  1) Test      —   500 S2,  3 core pairs"
-    echo "  2) Standard  —    5k S2, 20 pairs"
-    echo "  3) Full      —   10k S2, 20 pairs"
+    echo "  2) Standard  —    5k S2, 15 pairs"
+    echo "  3) Full      —   10k S2, 15 pairs"
     echo "  4) Custom    —  You choose everything"
     echo ""
     read -p "Select preset (1-4): " choice
@@ -315,7 +315,7 @@ if [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
             WORKERS="${WORKERS:-}"
             echo ""
             echo "Pairs:"
-            echo "  1) All 20 (full cluster set)"
+            echo "  1) All 15 (full cluster set)"
             echo "  2) Custom list"
             read -p "Select (1-2) [1]: " pair_choice
             case "${pair_choice:-1}" in

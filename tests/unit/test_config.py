@@ -19,9 +19,9 @@ from mqe.config import (
 
 class TestSymbols:
     def test_default_symbols(self):
-        assert len(SYMBOLS) == 20
+        assert len(SYMBOLS) == 15
         assert SYMBOLS[0] == "BTC/USDT"
-        assert SYMBOLS[-1] == "UNI/USDT"
+        assert SYMBOLS[-1] == "FIL/USDT"
 
     def test_all_symbols_have_slippage(self):
         for sym in SYMBOLS:
