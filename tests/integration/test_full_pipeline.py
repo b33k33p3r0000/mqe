@@ -46,12 +46,13 @@ def test_full_pipeline_smoke(tmp_path):
         result = run_stage1_pair(sym, pair_data[sym], n_trials=50, seed=42)
         stage1_results[sym] = result
 
-    # Verify Stage 1 output: all 14 strategy params present
+    # Verify Stage 1 output: all 15 strategy params present
     strategy_param_keys = {
         "macd_fast", "macd_slow", "macd_signal",
         "rsi_period", "rsi_lower", "rsi_upper", "rsi_lookback",
         "trend_tf", "trend_strict", "allow_flip",
         "adx_threshold", "trail_mult", "hard_stop_mult", "max_hold_bars",
+        "vol_sensitivity",
     }
     for sym, res in stage1_results.items():
         for key in strategy_param_keys:
@@ -64,7 +65,7 @@ def test_full_pipeline_smoke(tmp_path):
 
     pair_params = {sym: _extract_strategy_params(res) for sym, res in stage1_results.items()}
 
-    # Verify _extract_strategy_params returns exactly the 14 strategy params
+    # Verify _extract_strategy_params returns exactly the 15 strategy params
     for sym, params in pair_params.items():
         assert set(params.keys()) == strategy_param_keys, (
             f"Unexpected param keys for {sym}: {set(params.keys()) - strategy_param_keys}"
