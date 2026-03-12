@@ -250,7 +250,8 @@ CLUSTER_MAX_CONCURRENT: dict[str, int] = {
 
 TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
     "S": {
-        "allow_flip": (0, 1),
+        "vol_sensitivity": (0.3, 2.5),
+        "allow_flip": (0, 0),
         "macd_fast": (1.0, 20.0),
         "macd_slow": (10, 45),
         "macd_signal": (3, 15),
@@ -264,6 +265,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "max_hold_bars": (48, 168),
     },
     "A+": {
+        "vol_sensitivity": (0.3, 2.5),
         "allow_flip": (0, 0),
         "macd_fast": (1.0, 18.0),
         "macd_slow": (10, 42),
@@ -278,6 +280,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "max_hold_bars": (36, 144),
     },
     "A": {
+        "vol_sensitivity": (0.5, 2.0),
         "allow_flip": (0, 0),
         "macd_fast": (1.0, 18.0),
         "macd_slow": (10, 40),
@@ -292,6 +295,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "max_hold_bars": (36, 144),
     },
     "A-": {
+        "vol_sensitivity": (0.5, 2.0),
         "allow_flip": (0, 0),
         "macd_fast": (1.0, 15.0),
         "macd_slow": (12, 38),
@@ -306,6 +310,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "max_hold_bars": (24, 120),
     },
     "B+": {
+        "vol_sensitivity": (0.5, 1.5),
         "allow_flip": (0, 0),
         "macd_fast": (1.0, 15.0),
         "macd_slow": (12, 38),
@@ -320,6 +325,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "max_hold_bars": (24, 120),
     },
     "B": {
+        "vol_sensitivity": (0.5, 1.5),
         "allow_flip": (0, 0),
         "macd_fast": (1.0, 12.0),
         "macd_slow": (14, 35),
@@ -334,6 +340,7 @@ TIER_SEARCH_SPACE: dict[str, dict[str, tuple]] = {
         "max_hold_bars": (24, 96),
     },
     "B-": {
+        "vol_sensitivity": (0.5, 1.5),
         "allow_flip": (0, 0),
         "macd_fast": (1.0, 12.0),
         "macd_slow": (14, 35),
@@ -466,3 +473,22 @@ TIER_MULTIPLIERS = {"A": 1.0, "B": 0.6, "C": 0.25, "X": 0.0}  # sizing + ranking
 # ─── DISCORD ────────────────────────────────────────────────────────────────
 
 DISCORD_WEBHOOK_RUNS = os.environ.get("DISCORD_WEBHOOK_RUNS", "")
+
+# ─── GARCH ─────────────────────────────────────────────────────────────
+GARCH_WINDOW = 720              # rolling MLE fit window (30 days of 1H)
+GARCH_REFIT_INTERVAL = 168      # re-fit every 7 days
+GARCH_VOL_RATIO_MIN = 0.5       # min vol_ratio (max position boost = 2×)
+GARCH_VOL_RATIO_MAX = 2.0       # max vol_ratio (max position cut = 50%)
+GARCH_POSITION_MIN = 0.05       # absolute floor for adjusted position_pct
+GARCH_POSITION_MAX = 0.30       # absolute ceiling for adjusted position_pct
+GARCH_ADAPTIVE_STOPS = bool(os.environ.get("GARCH_ADAPTIVE_STOPS", ""))
+GARCH_STOP_FACTOR_MIN = 0.7     # min stop width multiplier
+GARCH_STOP_FACTOR_MAX = 1.5     # max stop width multiplier
+GARCH_REGIME_FILTER = bool(os.environ.get("GARCH_REGIME_FILTER", ""))
+GARCH_REGIME_THRESHOLD = 2.5    # conditional_vol / long_term_vol threshold
+
+# ─── PBO ───────────────────────────────────────────────────────────────
+PBO_N_PARAM_SETS = 100          # independent random param sets for CSCV
+PBO_N_SUBSETS = 8               # CSCV data subsets (C(8,4) = 70 combos)
+PBO_TIER_X_THRESHOLD = 0.50     # PBO > 50% → tier X
+PBO_DEMOTE_THRESHOLD = 0.30     # PBO 30-50% → demote 1 tier

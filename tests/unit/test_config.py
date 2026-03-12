@@ -89,9 +89,9 @@ class TestTierSearchSpace:
             assert tier in TIER_SEARCH_SPACE, f"Missing search space for tier {tier}"
 
     def test_search_space_has_all_params(self):
-        """Each tier has all 12 tunable param ranges."""
+        """Each tier has all 13 tunable param ranges (including vol_sensitivity)."""
         expected_keys = {
-            "allow_flip", "macd_fast", "macd_slow", "macd_signal",
+            "vol_sensitivity", "allow_flip", "macd_fast", "macd_slow", "macd_signal",
             "rsi_period", "rsi_lower", "rsi_upper", "rsi_lookback",
             "adx_threshold", "trail_mult", "hard_stop_mult", "max_hold_bars",
         }
@@ -105,14 +105,13 @@ class TestTierSearchSpace:
                 assert lo <= hi, f"Tier {tier} {key}: {lo} > {hi}"
 
     def test_tier_s_allows_flip(self):
-        """Tier S has allow_flip (0,1) = optimizable."""
-        assert TIER_SEARCH_SPACE["S"]["allow_flip"] == (0, 1)
+        """Tier S has allow_flip (0,0) = fixed off (disabled for GARCH+PBO)."""
+        assert TIER_SEARCH_SPACE["S"]["allow_flip"] == (0, 0)
 
     def test_non_s_tiers_fix_flip(self):
-        """Non-S tiers have allow_flip (0,0) = fixed off."""
+        """All tiers have allow_flip (0,0) = fixed off."""
         for tier, space in TIER_SEARCH_SPACE.items():
-            if tier != "S":
-                assert space["allow_flip"] == (0, 0), f"Tier {tier} allow_flip not fixed"
+            assert space["allow_flip"] == (0, 0), f"Tier {tier} allow_flip not fixed"
 
     def test_lower_tiers_narrower_macd(self):
         """Lower tiers have narrower MACD ranges."""
