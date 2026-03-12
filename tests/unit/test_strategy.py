@@ -11,7 +11,7 @@ from tests.conftest import make_1h_ohlcv_pd, resample_to_multi_tf
 
 class TestOptunaParams:
     def test_param_count(self):
-        """Strategy has 14 Optuna params."""
+        """Strategy has 15 Optuna params."""
         strategy = MultiPairStrategy()
         study = optuna.create_study()
         trial = study.ask()
@@ -19,7 +19,7 @@ class TestOptunaParams:
             params = strategy.get_optuna_params(trial, "BTC/USDT")
         except optuna.TrialPruned:
             params = strategy.get_optuna_params(study.ask(), "BTC/USDT")
-        assert len(params) == 14
+        assert len(params) == 15
 
     def test_new_params_present(self):
         """New MQE params: adx_threshold, trail_mult, hard_stop_mult, max_hold_bars."""
@@ -167,8 +167,22 @@ class TestPerTierParams:
         except optuna.TrialPruned:
             pass
 
+    def test_vol_sensitivity_in_optuna_params(self):
+        """vol_sensitivity should be the 15th Optuna param."""
+        strategy = MultiPairStrategy()
+        study = optuna.create_study()
+        for _ in range(10):
+            trial = study.ask()
+            try:
+                params = strategy.get_optuna_params(trial, "BTC/USDT")
+                assert "vol_sensitivity" in params
+                assert 0.3 <= params["vol_sensitivity"] <= 2.5  # S tier range
+                break
+            except optuna.TrialPruned:
+                pass
+
     def test_param_count_unchanged(self):
-        """Still 14 params regardless of tier."""
+        """Still 15 params regardless of tier."""
         strategy = MultiPairStrategy()
         for sym in ["BTC/USDT", "NEAR/USDT", "INJ/USDT"]:
             study = optuna.create_study()
@@ -176,7 +190,7 @@ class TestPerTierParams:
                 trial = study.ask()
                 try:
                     params = strategy.get_optuna_params(trial, sym)
-                    assert len(params) == 14
+                    assert len(params) == 15
                     break
                 except optuna.TrialPruned:
                     pass

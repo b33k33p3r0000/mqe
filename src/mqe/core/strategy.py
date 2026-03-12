@@ -10,7 +10,7 @@ Layers:
   5. ADX pre-filter (per-pair)
   6. Correlation gate (portfolio-level -- handled by portfolio.py)
 
-14 Optuna parameters per pair.
+15 Optuna parameters per pair.
 Returns (buy_signal, sell_signal, atr_values, signal_strength) -- ATR needed for exit system,
 signal_strength needed for correlation gate ranking in portfolio.py.
 """
@@ -50,6 +50,7 @@ class BaseStrategy(ABC):
         symbol: str | None = None,
         btc_regime_data: dict[str, Any] | None = None,
         btc_stage1_params: dict[str, Any] | None = None,
+        garch_arrays: tuple | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Returns (buy_signal, sell_signal, atr_values, signal_strength)."""
         pass
@@ -73,7 +74,7 @@ class MultiPairStrategy(BaseStrategy):
         symbol: str | None = None,
         allow_flip_override: Optional[int] = None,
     ) -> dict[str, Any]:
-        """14 Optuna parameters per pair, with tier-specific ranges."""
+        """15 Optuna parameters per pair, with tier-specific ranges."""
         params: dict[str, Any] = {}
 
         # Resolve tier-specific search space
@@ -120,6 +121,10 @@ class MultiPairStrategy(BaseStrategy):
             "max_hold_bars", *space["max_hold_bars"]
         )
 
+        # -- GARCH vol sensitivity --
+        vs_range = space.get("vol_sensitivity", (0.5, 1.5))
+        params["vol_sensitivity"] = trial.suggest_float("vol_sensitivity", vs_range[0], vs_range[1])
+
         return params
 
     def precompute_signals(
@@ -130,6 +135,7 @@ class MultiPairStrategy(BaseStrategy):
         symbol: str | None = None,
         btc_regime_data: dict[str, Any] | None = None,
         btc_stage1_params: dict[str, Any] | None = None,
+        garch_arrays: tuple | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Compute buy/sell signals + ATR array + signal strength.
@@ -295,9 +301,22 @@ class MultiPairStrategy(BaseStrategy):
             & ~has_nan
         )
 
+        buy_signal = buy_signal.astype(np.bool_).copy()
+        sell_signal = sell_signal.astype(np.bool_).copy()
+
+        # -- Layer 7: GARCH regime filter (live-only, config-gated) --
+        from mqe.config import GARCH_REGIME_FILTER, GARCH_REGIME_THRESHOLD
+
+        if GARCH_REGIME_FILTER and garch_arrays is not None:
+            _, cond_vol, lt_vol = garch_arrays
+            for i in range(n_bars):
+                if lt_vol[i] > 0 and cond_vol[i] / lt_vol[i] > GARCH_REGIME_THRESHOLD:
+                    buy_signal[i] = False
+                    sell_signal[i] = False
+
         return (
-            buy_signal.astype(np.bool_),
-            sell_signal.astype(np.bool_),
+            buy_signal,
+            sell_signal,
             atr_arr,
             signal_strength,
         )
@@ -318,4 +337,5 @@ class MultiPairStrategy(BaseStrategy):
             "trail_mult": 3.0,
             "hard_stop_mult": 2.5,
             "max_hold_bars": 168,
+            "vol_sensitivity": 1.0,
         }
