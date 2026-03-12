@@ -45,6 +45,7 @@ from mqe.config import (
     TRIALS_LONG,
 )
 from mqe.core.backtest import simulate_trades_fast
+from mqe.core.garch import garch_conditional_vol
 from mqe.core.metrics import MetricsResult, calculate_metrics
 from mqe.core.portfolio import PortfolioResult, PortfolioSimulator
 from mqe.core.strategy import MultiPairStrategy
@@ -70,6 +71,21 @@ def fetch_all_data(
 
     exchange = ccxt.binance({"enableRateLimit": True})
     return load_multi_pair_data(exchange, symbols, hours)
+
+
+def compute_garch_arrays(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Pre-compute GARCH(1,1) arrays for all pairs."""
+    garch_arrays: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+    for symbol, data in all_data.items():
+        close = data[BASE_TF]["close"]
+        garch_arrays[symbol] = garch_conditional_vol(close)
+        logger.info(
+            "GARCH computed for %s (vol_ratio range: %.2f-%.2f)",
+            symbol, garch_arrays[symbol][0].min(), garch_arrays[symbol][0].max(),
+        )
+    return garch_arrays
 
 
 def _extract_strategy_params(stage1_result: dict[str, Any]) -> dict[str, Any]:
@@ -190,6 +206,7 @@ def run_per_pair_evaluation(
     pair_signals: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
     pair_params: dict[str, dict[str, Any]],
     output_dir: Path,
+    garch_arrays: dict[str, tuple] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run per-pair backtests on full data. Used for tier assignment."""
     logger.info("Per-pair evaluation: running full backtests for tier assignment")
@@ -214,6 +231,8 @@ def run_per_pair_evaluation(
             hard_stop_mult=float(params.get("hard_stop_mult", 2.5)),
             trail_mult=float(params.get("trail_mult", 3.0)),
             max_hold_bars=int(params.get("max_hold_bars", 168)),
+            vol_ratio=garch_arrays[symbol][0] if garch_arrays and symbol in garch_arrays else None,
+            vol_sensitivity=float(params.get("vol_sensitivity", 1.0)),
         )
 
         metrics = calculate_metrics(
@@ -254,6 +273,7 @@ def run_wf_evaluation(
     pair_params: dict[str, dict[str, Any]],
     s1_sharpes: dict[str, float],
     output_dir: Path,
+    garch_arrays: dict[str, tuple] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run walk-forward evaluation on OOS windows for each pair.
 
@@ -293,6 +313,8 @@ def run_wf_evaluation(
                 hard_stop_mult=float(params.get("hard_stop_mult", 2.5)),
                 trail_mult=float(params.get("trail_mult", 3.0)),
                 max_hold_bars=int(params.get("max_hold_bars", 168)),
+                vol_ratio=garch_arrays[symbol][0] if garch_arrays and symbol in garch_arrays else None,
+                vol_sensitivity=float(params.get("vol_sensitivity", 1.0)),
             )
 
             if not result.trades or len(result.trades) < 3:
@@ -341,6 +363,7 @@ def run_final_evaluation(
     output_dir: Path,
     per_pair_metrics: dict[str, dict[str, Any]] | None = None,
     tier_multipliers: dict[str, float] | None = None,
+    garch_arrays: dict[str, tuple] | None = None,
 ) -> dict[str, Any]:
     """Run final evaluation with best params from both stages.
 
@@ -361,6 +384,7 @@ def run_final_evaluation(
     if per_pair_metrics is None:
         per_pair_metrics = run_per_pair_evaluation(
             all_data, pair_signals, pair_params, output_dir,
+            garch_arrays=garch_arrays,
         )
 
     # ── Portfolio sim with best S2 params ──
@@ -407,6 +431,7 @@ def run_final_evaluation(
             "corr_gate_threshold", CORRELATION_GATE_THRESHOLD
         ),
         tier_multipliers=tier_multipliers,
+        garch_arrays=garch_arrays,
     )
     portfolio_result = sim.run()
 
@@ -455,6 +480,7 @@ def precompute_all_signals(
     pair_data: dict[str, dict[str, pd.DataFrame]],
     pair_params: dict[str, dict[str, Any]],
     btc_stage1_params: dict[str, Any] | None = None,
+    garch_arrays: dict[str, tuple] | None = None,
 ) -> dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
     """Pre-compute signals for all pairs using Stage 1 best params.
 
@@ -478,6 +504,7 @@ def precompute_all_signals(
             symbol=symbol,
             btc_regime_data=btc_data,
             btc_stage1_params=btc_stage1_params,
+            garch_arrays=garch_arrays.get(symbol) if garch_arrays else None,
         )
         signals[symbol] = result
 
@@ -529,6 +556,7 @@ def run_stage1_all_pairs(
     output_dir: Path | None = None,
     n_jobs: int | None = None,
     adaptive_trials: bool = True,
+    garch_arrays: dict[str, tuple] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run Stage 1 for all pairs in parallel.
 
@@ -566,11 +594,13 @@ def run_stage1_all_pairs(
             else:
                 pair_trials = n_trials
             pair_ceiling, _ = compute_wf_ceiling(n_bars)
+            garch_vol_ratio = garch_arrays[symbol][0] if garch_arrays and symbol in garch_arrays else None
             future = executor.submit(
                 run_stage1_pair, symbol, all_data[symbol], pair_trials,
                 output_dir=output_dir,
                 n_jobs=jobs_per_pair,
                 ceiling=pair_ceiling,
+                garch_vol_ratio=garch_vol_ratio,
             )
             futures[future] = symbol
         for future in as_completed(futures):
@@ -634,11 +664,15 @@ def run_pipeline(
     # ── 1. Fetch data ──
     all_data = fetch_all_data(symbols, hours)
 
+    # ── 1b. Pre-compute GARCH arrays ──
+    garch_arrays = compute_garch_arrays(all_data)
+
     # ── 2. Stage 1: per-pair optimization (parallel) ──
     stage1_results = run_stage1_all_pairs(
         symbols, all_data, stage1_trials, max_workers,
         output_dir=output_dir,
         n_jobs=n_jobs,
+        garch_arrays=garch_arrays,
     )
 
     # ── 3. Re-compute signals with best Stage 1 params ──
@@ -647,7 +681,7 @@ def run_pipeline(
         for sym, res in stage1_results.items()
     }
     btc_params = pair_params.get("BTC/USDT")
-    pair_signals = precompute_all_signals(all_data, pair_params, btc_params)
+    pair_signals = precompute_all_signals(all_data, pair_params, btc_params, garch_arrays=garch_arrays)
 
     # ── 4. Walk-forward evaluation (OOS windows) ──
     s1_sharpes = {
@@ -656,6 +690,7 @@ def run_pipeline(
     }
     wf_metrics = run_wf_evaluation(
         all_data, pair_signals, pair_params, s1_sharpes, output_dir,
+        garch_arrays=garch_arrays,
     )
 
     # ── 5. Enhanced tiering (3-signal: OOS Sharpe + degradation + consistency) ──
@@ -684,6 +719,7 @@ def run_pipeline(
     # ── 6. Per-pair evaluation (full data for reporting) ──
     per_pair_metrics = run_per_pair_evaluation(
         all_data, pair_signals, pair_params, output_dir,
+        garch_arrays=garch_arrays,
     )
 
     # ── 6b. Post-eval gate: override tier to X if full-eval Sharpe < 0 ──
@@ -713,6 +749,7 @@ def run_pipeline(
         all_data, pair_signals, pair_params, stage2_result, output_dir,
         per_pair_metrics=per_pair_metrics,
         tier_multipliers=tier_multipliers,
+        garch_arrays=garch_arrays,
     )
 
     # ── 9. Save combined results ──
@@ -723,6 +760,7 @@ def run_pipeline(
         "tag": tag,
         "hours": hours,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "garch_computed": True,
         "stage1_results": stage1_results,
         "stage2_results": stage2_result,
         "tier_assignments": tier_assignments,
@@ -875,13 +913,16 @@ def resume_pipeline(
     # ── 3. Fetch data ──
     all_data = fetch_all_data(symbols, hours)
 
+    # ── 3b. Pre-compute GARCH arrays ──
+    garch_arrays = compute_garch_arrays(all_data)
+
     # ── 4. Re-compute signals with Stage 1 params ──
     pair_params = {
         sym: _extract_strategy_params(res)
         for sym, res in stage1_results.items()
     }
     btc_params = pair_params.get("BTC/USDT")
-    pair_signals = precompute_all_signals(all_data, pair_params, btc_params)
+    pair_signals = precompute_all_signals(all_data, pair_params, btc_params, garch_arrays=garch_arrays)
 
     # ── 5. Walk-forward evaluation (OOS windows) ──
     s1_sharpes = {
@@ -890,6 +931,7 @@ def resume_pipeline(
     }
     wf_metrics = run_wf_evaluation(
         all_data, pair_signals, pair_params, s1_sharpes, output_dir,
+        garch_arrays=garch_arrays,
     )
 
     # ── 6. Enhanced tiering (3-signal: OOS Sharpe + degradation + consistency) ──
@@ -912,6 +954,7 @@ def resume_pipeline(
     # ── 7. Per-pair evaluation (full data for reporting) ──
     per_pair_metrics = run_per_pair_evaluation(
         all_data, pair_signals, pair_params, output_dir,
+        garch_arrays=garch_arrays,
     )
 
     # ── 7b. Post-eval gate: override tier to X if full-eval Sharpe < 0 ──
@@ -941,6 +984,7 @@ def resume_pipeline(
         all_data, pair_signals, pair_params, stage2_result, output_dir,
         per_pair_metrics=per_pair_metrics,
         tier_multipliers=tier_multipliers,
+        garch_arrays=garch_arrays,
     )
 
     # ── 10. Save combined results ──
