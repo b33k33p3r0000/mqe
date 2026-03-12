@@ -157,3 +157,37 @@ Resilience Score thresholds byly příliš měkké — baseline run okamžitě z
 
 ### Rozhodnutí
 Agent smazán. Pro iterativní vylepšování strategie se používá `/analyze` skill — přímočařejší, bez overheadu orchestrace.
+
+---
+
+## 2026-03-12 — GARCH(1,1) + PBO Implementation
+
+### Co se udělalo
+Dva nové moduly přidané do MQE pipeline dle spec `docs/plans/2026-03-12-mqe-garch-pbo-design.md`:
+
+**GARCH(1,1) Dynamic Sizing (Tasks 1-6):**
+- `core/garch.py`: Rolling MLE GARCH(1,1) — conditional vol, vol_ratio (lt/cond), clipped [0.5, 2.0]
+- `config.py`: GARCH konstanty (window 720, refit 168, position min/max), vol_sensitivity v TIER_SEARCH_SPACE
+- `core/backtest.py`: Numba loop — vol_ratio × vol_sensitivity adjustuje position sizing, adaptive stops (env flag)
+- `core/strategy.py`: vol_sensitivity jako 15. Optuna param + GARCH regime filter (env flag)
+- `stage1.py`, `risk/sizing.py`, `core/portfolio.py`: GARCH plumbing
+- `optimize.py`: Pre-compute step `compute_garch_arrays()` před Stage 1
+
+**PBO — Probability of Backtest Overfitting (Tasks 7-8):**
+- `core/pbo.py`: CSCV (C(8,4)=70 combos), 100 random param sets, PBO score, tier override (>0.50→X, >0.30→demote)
+- `optimize.py`: `run_pbo_evaluation()` — parallel per-pair PBO, vložen mezi WF eval a per-pair evaluation
+
+**Reporting (Task 9):**
+- `report.py`: Rich + Markdown tier+PBO tabulka (WF Tier → PBO → Final Tier → Multiplier)
+- `notify.py`: PBO excluded/demoted count v Discord zprávě
+- `html_report.py`: Rozšířená tier tabulka + PBO bar chart (Plotly, threshold lines 0.30/0.50)
+
+### Key decisions
+- allow_flip fixován na (0,0) pro VŠECHNY tiery (dříve S tier měl 0-1)
+- GARCH regime filter + adaptive stops jsou OFF by default (env flags), sizing je ON
+- PBO běží parallel per pair přes ProcessPoolExecutor
+- notify_complete() rozšířeno o pipeline_result param pro PBO data
+
+### Current state
+- 467 unit tests, all passing
+- 10 tasků dokončeno (7 v předchozích sessions, 3 v této)
