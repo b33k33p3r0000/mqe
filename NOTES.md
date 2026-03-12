@@ -121,3 +121,19 @@ Full MQE (Multi-pair Quant Engine) implementation from scratch — 18 TDD tasks,
 
 ### Výstup
 `results/{TIMESTAMP}/report.html` — generuje se automaticky na konci každého runu.
+
+---
+
+## 2026-03-12 — Agent removal
+
+### Co se stalo
+Improvement Agent (autonomní loop: analyze → change → validate → full run → promote/rollback) odstraněn po opakovaných selháních:
+- Iter 1: Blocked na write permissions (settings.json neexistoval v době spuštění)
+- Iter 2: Validation run crash po tighten macd_fast bounds
+- Iter 3: Agent se zastavil — scoring saturoval na 98.5/100, 5/6 dimenzí na 100
+
+### Root cause
+Resilience Score thresholds byly příliš měkké — baseline run okamžitě zamaxoval většinu dimenzí. Scoring byl přepsán (Calmar 8→30, DD 5%→1.5%, +2 nové dimenze), ale agent měl příliš mnoho pohyblivých částí (git branches, state management, crash recovery) a každý fix odkryl další problém.
+
+### Rozhodnutí
+Agent smazán. Pro iterativní vylepšování strategie se používá `/analyze` skill — přímočařejší, bez overheadu orchestrace.
