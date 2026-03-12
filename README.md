@@ -512,7 +512,7 @@ compute_position_size(symbol, open_pairs, equity, atr_dict, corr_dict)
 
 Removed (persistently unviable WF): LTC, ATOM, UNI, AVAX, DOT.
 
-Per-tier search spaces — S-tier allows `allow_flip: (0,1)`, all other tiers force `allow_flip: (0,0)`. Lower tiers have progressively tighter parameter ranges.
+Per-tier search spaces — `allow_flip` is disabled for ALL tiers `(0,0)`. Lower tiers have progressively tighter parameter ranges.
 
 ## Project Structure
 
@@ -687,6 +687,16 @@ FEE=0.0006                    # 6 bps (default in config.py)
 SLIPPAGE=0.0015                # 15 bps default (per-pair map in config.py)
 DISCORD_WEBHOOK_RUNS=https://discord.com/api/webhooks/...
 ```
+
+## TODO — Future Improvements
+
+### Sizing: inverse-vol → GARCH-based weighting
+Current portfolio sizing uses backward-looking `1/ATR` for inverse-volatility weighting. After GARCH dynamic sizing (multiplicative, variant A) is tuned and validated, revisit replacing `1/ATR` with `1/GARCH_conditional_vol` (variant B) in `sizing.py` for forward-looking allocation. Requires stable GARCH metrics across multiple runs first.
+
+### Pipeline logic audit
+Review the ordering and impact of each pipeline step (S1 → signals → WF eval → tiering → PBO → per-pair eval → post-eval gate → S2 → final eval). Document: which steps are load-bearing for strategy quality vs cosmetic/diagnostic, what is the real impact of each step on final portfolio metrics, and whether the current ordering is optimal or if steps should be reordered/merged.
+
+---
 
 ## Dependencies
 
