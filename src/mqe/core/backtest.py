@@ -39,6 +39,9 @@ from mqe.config import (
     BACKTEST_POSITION_PCT,
     BASE_TF,
     FEE,
+    GARCH_ADAPTIVE_STOPS,
+    GARCH_STOP_FACTOR_MIN,
+    GARCH_STOP_FACTOR_MAX,
     LONG_ONLY,
     MIN_HOLD_BARS,
     MIN_WARMUP_BARS,
@@ -94,6 +97,10 @@ def trading_loop_numba(
     long_only: bool,
     allow_flip: bool,
     starting_equity: float,
+    vol_ratio: np.ndarray,
+    vol_sensitivity: float,
+    adaptive_stops: bool,
+    stop_vol_factor: np.ndarray,
 ) -> tuple[float, np.ndarray, int]:
     """
     Numba trading loop with 5-level exit.
@@ -139,14 +146,19 @@ def trading_loop_numba(
             bars_held = bar - entry_bar_idx
 
             # === EXIT 1: HARD STOP (highest priority) ===
+            if adaptive_stops:
+                effective_atr = current_atr * stop_vol_factor[bar]
+            else:
+                effective_atr = current_atr
+
             hard_stop_triggered = False
             if position == 1:
-                stop_level = entry_price - hard_stop_mult * current_atr
+                stop_level = entry_price - hard_stop_mult * effective_atr
                 if current_low <= stop_level:
                     exit_price = stop_level * (1.0 - slippage)
                     hard_stop_triggered = True
             elif position == -1:
-                stop_level = entry_price + hard_stop_mult * current_atr
+                stop_level = entry_price + hard_stop_mult * effective_atr
                 if current_high >= stop_level:
                     exit_price = stop_level * (1.0 + slippage)
                     hard_stop_triggered = True
@@ -186,22 +198,22 @@ def trading_loop_numba(
             if not trailing_active:
                 if position == 1:
                     unrealized = current_high - entry_price
-                    if unrealized >= trailing_activation_mult * current_atr:
+                    if unrealized >= trailing_activation_mult * effective_atr:
                         trailing_active = True
                 elif position == -1:
                     unrealized = entry_price - current_low
-                    if unrealized >= trailing_activation_mult * current_atr:
+                    if unrealized >= trailing_activation_mult * effective_atr:
                         trailing_active = True
 
             if trailing_active:
                 trailing_triggered = False
                 if position == 1:
-                    trail_level = highest_price - trail_mult * current_atr
+                    trail_level = highest_price - trail_mult * effective_atr
                     if current_low <= trail_level:
                         exit_price = trail_level * (1.0 - slippage)
                         trailing_triggered = True
                 elif position == -1:
-                    trail_level = lowest_price + trail_mult * current_atr
+                    trail_level = lowest_price + trail_mult * effective_atr
                     if current_high >= trail_level:
                         exit_price = trail_level * (1.0 + slippage)
                         trailing_triggered = True
@@ -300,7 +312,12 @@ def trading_loop_numba(
 
                 if allow_flip and not long_only and cash > 0:
                     entry_price = current_price * (1.0 - slippage)
-                    capital_at_entry = cash * position_pct
+                    adjusted_pct = position_pct * vol_ratio[bar] * vol_sensitivity
+                    if adjusted_pct < 0.05:
+                        adjusted_pct = 0.05
+                    elif adjusted_pct > 0.30:
+                        adjusted_pct = 0.30
+                    capital_at_entry = cash * adjusted_pct
                     position_size = capital_at_entry / (entry_price * (1.0 + fee))
                     cash -= capital_at_entry
                     entry_bar_idx = bar
@@ -336,7 +353,12 @@ def trading_loop_numba(
 
                 if allow_flip and cash > 0:
                     entry_price = current_price * (1.0 + slippage)
-                    capital_at_entry = cash * position_pct
+                    adjusted_pct = position_pct * vol_ratio[bar] * vol_sensitivity
+                    if adjusted_pct < 0.05:
+                        adjusted_pct = 0.05
+                    elif adjusted_pct > 0.30:
+                        adjusted_pct = 0.30
+                    capital_at_entry = cash * adjusted_pct
                     position_size = capital_at_entry / (entry_price * (1.0 + fee))
                     cash -= capital_at_entry
                     entry_bar_idx = bar
@@ -349,7 +371,12 @@ def trading_loop_numba(
         if position == 0:
             if buy_signal[bar] and cash > 0:
                 entry_price = current_price * (1.0 + slippage)
-                capital_at_entry = cash * position_pct
+                adjusted_pct = position_pct * vol_ratio[bar] * vol_sensitivity
+                if adjusted_pct < 0.05:
+                    adjusted_pct = 0.05
+                elif adjusted_pct > 0.30:
+                    adjusted_pct = 0.30
+                capital_at_entry = cash * adjusted_pct
                 position_size = capital_at_entry / (entry_price * (1.0 + fee))
                 cash -= capital_at_entry
                 entry_bar_idx = bar
@@ -359,7 +386,12 @@ def trading_loop_numba(
                 trailing_active = False
             elif sell_signal[bar] and not long_only and cash > 0:
                 entry_price = current_price * (1.0 - slippage)
-                capital_at_entry = cash * position_pct
+                adjusted_pct = position_pct * vol_ratio[bar] * vol_sensitivity
+                if adjusted_pct < 0.05:
+                    adjusted_pct = 0.05
+                elif adjusted_pct > 0.30:
+                    adjusted_pct = 0.30
+                capital_at_entry = cash * adjusted_pct
                 position_size = capital_at_entry / (entry_price * (1.0 + fee))
                 cash -= capital_at_entry
                 entry_bar_idx = bar
@@ -417,6 +449,9 @@ def simulate_trades_fast(
     trail_mult: float = 3.0,
     max_hold_bars: int = 168,
     position_pct: float | None = None,
+    vol_ratio: np.ndarray | None = None,
+    vol_sensitivity: float = 1.0,
+    adaptive_stops: bool | None = None,
 ) -> BacktestResult:
     """
     Backtest with 5-level exit system.
@@ -458,6 +493,17 @@ def simulate_trades_fast(
 
     slippage = get_slippage(symbol)
 
+    if vol_ratio is None:
+        vol_ratio = np.ones(len(base), dtype=np.float64)
+
+    if adaptive_stops is None:
+        adaptive_stops = GARCH_ADAPTIVE_STOPS
+
+    if adaptive_stops:
+        stop_vol_factor = np.clip(1.0 / vol_ratio, GARCH_STOP_FACTOR_MIN, GARCH_STOP_FACTOR_MAX)
+    else:
+        stop_vol_factor = np.ones(len(base), dtype=np.float64)
+
     final_equity, trades_arr, n_trades = trading_loop_numba(
         close=close,
         high=high_arr,
@@ -478,6 +524,10 @@ def simulate_trades_fast(
         long_only=long_only,
         allow_flip=allow_flip,
         starting_equity=float(STARTING_EQUITY),
+        vol_ratio=vol_ratio,
+        vol_sensitivity=vol_sensitivity,
+        adaptive_stops=adaptive_stops,
+        stop_vol_factor=stop_vol_factor,
     )
 
     reason_map = {

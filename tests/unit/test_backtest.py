@@ -166,3 +166,51 @@ class TestExitPriority:
             atr_values=atr_arr, hard_stop_mult=2.0,
         )
         assert result.trades[0]["reason"] == "hard_stop"
+
+
+class TestGarchSizing:
+    """Test GARCH vol_ratio affects position sizing in backtest."""
+
+    def test_high_vol_reduces_position(self):
+        """When vol_ratio < 1 (high vol), position should be smaller."""
+        data = _make_data()
+        n = len(data["1h"])
+        buy, sell = _make_signals(n, buy_bars=[250])
+        atr_arr = np.full(n, 1.0)
+
+        # Neutral vol_ratio
+        r1 = simulate_trades_fast(
+            "BTC/USDT", data, buy, sell, atr_values=atr_arr,
+            hard_stop_mult=100.0, trail_mult=100.0, max_hold_bars=999,
+            vol_ratio=np.ones(n, dtype=np.float64), vol_sensitivity=1.0,
+        )
+        # High vol (ratio=0.5 -> half size)
+        r2 = simulate_trades_fast(
+            "BTC/USDT", data, buy, sell, atr_values=atr_arr,
+            hard_stop_mult=100.0, trail_mult=100.0, max_hold_bars=999,
+            vol_ratio=np.full(n, 0.5, dtype=np.float64), vol_sensitivity=1.0,
+        )
+
+        assert r1.trades and r2.trades
+        assert r2.trades[0]["capital_at_entry"] < r1.trades[0]["capital_at_entry"]
+
+    def test_default_vol_ratio_is_neutral(self):
+        """Without vol_ratio param, behavior should be identical to before."""
+        data = _make_data()
+        n = len(data["1h"])
+        buy, sell = _make_signals(n, buy_bars=[250], sell_bars=[300])
+        atr_arr = np.full(n, 1.0)
+
+        # Without GARCH params (defaults)
+        r1 = simulate_trades_fast(
+            "BTC/USDT", data, buy, sell, atr_values=atr_arr,
+        )
+        # With explicit neutral GARCH params
+        r2 = simulate_trades_fast(
+            "BTC/USDT", data, buy, sell, atr_values=atr_arr,
+            vol_ratio=np.ones(n, dtype=np.float64), vol_sensitivity=1.0,
+        )
+
+        assert len(r1.trades) == len(r2.trades)
+        if r1.trades:
+            assert abs(r1.trades[0]["capital_at_entry"] - r2.trades[0]["capital_at_entry"]) < 0.01
