@@ -9,10 +9,10 @@ that Numba cannot handle.
 
 Exit priority per bar (for each open position):
   1. HARD STOP -- entry +/- hard_stop_mult x ATR
-  2. PORTFOLIO HEAT -- close worst performer when portfolio DD > threshold
-  3. TRAILING STOP -- activates after 1.5xATR profit, trails at trail_mult x ATR
-  4. TIME EXIT -- max_hold_bars
-  5. OPPOSING SIGNAL -- signal exit
+  2. TRAILING STOP -- activates after 1.5xATR profit, trails at trail_mult x ATR
+  3. TIME EXIT -- max_hold_bars
+  4. OPPOSING SIGNAL -- signal exit
+  5. PORTFOLIO HEAT -- close worst performer when portfolio DD > threshold (after individual exits)
   6. FORCE CLOSE -- end of data
 
 Entry logic per bar:

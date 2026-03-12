@@ -978,7 +978,7 @@ def resume_pipeline(
     for path in sorted(stage1_dir.glob("*.json")):
         if "_progress" in path.name:
             continue
-        result = json.load(open(path))
+        result = json.loads(path.read_text())
         symbol = result["symbol"]
         stage1_results[symbol] = result
 

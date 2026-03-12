@@ -37,7 +37,7 @@ Data (Local Parquet / Binance OHLCV via ccxt)
   │  log(1 + Calmar) × sharpe_decay
   │  Final score = průměr přes splity
   │
-  Optuna CMA-ES + TPE warmup, 14 params, N trials per pair
+  Optuna CMA-ES + TPE warmup, 15 params, N trials per pair
   │  ProcessPoolExecutor → parallel across pairs
   │  → best_params per pair
   │
@@ -197,7 +197,7 @@ Kontroluje 5 úrovní **v pevném pořadí** per bar. První shoda ukončí pozi
 2. Trailing Stop     (aktivuje se po 1.5×ATR zisku, trails at trail_mult × ATR)
 3. Time Exit         (max_hold_bars dosaženo)
 4. Opposing Signal   (opačný 3-layer signál, min 2 bary hold)
-5. Portfolio Heat    (equity DD > threshold → close worst position, Stage 2 only)
+5. Portfolio Heat    (equity DD > threshold → close worst position, Stage 2 only, po individuálních exitech)
 ```
 
 ### 1. Hard Stop (Emergency)
@@ -247,7 +247,7 @@ if current_dd > portfolio_heat:
 
 ### Stage 1 — Per-pair CMA-ES (AWF splits)
 
-Optuna CMA-ES sampler with TPE warmup. 14 params per pair.
+Optuna CMA-ES sampler with TPE warmup. 15 params per pair.
 
 - **S1 trains within WF ceiling** (70% for 3yr+ data, 75% for 1.5-3yr, 80% for shorter) — remaining data reserved for OOS evaluation
 - AWF splits: 5 splits (>= 3yr), 3 splits (>= 1.5yr), 2 splits (shorter) — within the ceiling
@@ -280,7 +280,7 @@ After S1, each pair is evaluated on OOS data beyond the S1 ceiling:
 |-------|-------|-------------|
 | `max_concurrent` | min(3,N)-min(N,10) | Max simultaneous positions |
 | `cluster_max` | 1-3 | Max per cluster |
-| `portfolio_heat` | 0.03-0.10 | DD threshold for emergency close |
+| `portfolio_heat` | 0.15-0.50 | DD threshold for emergency close |
 | `corr_gate_threshold` | 0.50-0.80 | Correlation gate strictness |
 
 ---
@@ -369,16 +369,11 @@ Fee: 6 bps per side (Binance VIP0 taker + buffer). Slippage per pair (asymetrick
 | BNB/USDT | 12 bps | A |
 | LINK/USDT | 18 bps | A |
 | SUI/USDT | 22 bps | A- |
-| AVAX/USDT | 20 bps | A- |
-| DOT/USDT | 20 bps | B+ |
 | ADA/USDT | 20 bps | B+ |
 | DOGE/USDT | 15 bps | B+ |
 | NEAR/USDT | 25 bps | B |
-| LTC/USDT | 15 bps | B |
 | APT/USDT | 25 bps | B |
-| ATOM/USDT | 22 bps | B |
 | FIL/USDT | 25 bps | B |
-| UNI/USDT | 22 bps | B |
 | ARB/USDT | 30 bps | B- |
 | OP/USDT | 30 bps | B- |
 | INJ/USDT | 35 bps | B- |
@@ -412,11 +407,11 @@ Konec dat:
 
 ```
 For each bar (1H):
-    ├── 1. Check PORTFOLIO HEAT exit
-    │   If equity DD > portfolio_heat → close worst position
-    │
-    ├── 2. Check SIGNAL EXITS for each open position
+    ├── 1. Check SIGNAL EXITS for each open position
     │   Per-pair exit logic (hard stop, trailing, time, opposing)
+    │
+    ├── 2. Check PORTFOLIO HEAT exit (after individual exits)
+    │   If equity DD > portfolio_heat → close worst position
     │
     ├── 3. Collect NEW ENTRY signals
     │   Check: pair already open → skip, max_concurrent → skip, cluster_max → skip
@@ -432,14 +427,12 @@ For each bar (1H):
 
 | Cluster | Páry | Max Concurrent |
 |---------|------|----------------|
-| blue_chip | BTC, LTC | 2 |
-| smart_contract_l1 | ETH, SOL, ADA, DOT, NEAR, APT, SUI, AVAX | 2 |
+| blue_chip | BTC | 2 |
+| smart_contract_l1 | ETH, SOL, ADA, NEAR, APT, SUI | 2 |
 | l2 | ARB, OP | 1 |
 | exchange | BNB | 1 |
 | narrative | XRP, LINK, INJ | 2 |
 | meme | DOGE | 1 |
-| cosmos | ATOM | 1 |
-| defi | UNI | 1 |
 | storage | FIL | 1 |
 
 ### Position Sizing (Inverse-Vol)
@@ -544,6 +537,7 @@ mqe/
 ├── tests/
 │   ├── unit/                # 18 test modules, 267 tests total
 │   └── integration/         # Full pipeline smoke tests
+│   # ~470 tests total
 ├── run.sh                   # CLI entry point (interactive menu + process management)
 ├── pyproject.toml           # Dependencies (uv)
 ├── NOTES.md                 # Session notes
@@ -582,8 +576,8 @@ uv run python -m mqe.optimize --resume results/20260304_194135 --s2-trials 10000
 | Preset | S1 Trials | S2 Trials | Pairs | Purpose |
 |--------|-----------|-----------|-------|---------|
 | Test | adaptive | 500 | 3 (core) | Smoke test |
-| Standard | adaptive | 5,000 | 20 (all) | Normal run |
-| Full | adaptive | 10,000 | 20 (all) | Max quality |
+| Standard | adaptive | 5,000 | 15 (all) | Normal run |
+| Full | adaptive | 10,000 | 15 (all) | Max quality |
 | Custom | adaptive | user input | user input | Manual override |
 
 S1 trials are **data-adaptive**: <2.5yr = 35k, >=2.5yr = 50k, >=4.5yr = 65k trials per pair.
@@ -611,7 +605,7 @@ uv run python -m mqe.compare results/run1 results/run2  # Cross-run comparison
 
 All config in `src/mqe/config.py`.
 
-### Stage 1 Parameters (14 per pair, per-tier ranges)
+### Stage 1 Parameters (15 per pair, per-tier ranges)
 
 | Param | Typ | S-tier Range | Default |
 |-------|-----|-------------|---------|
@@ -629,6 +623,7 @@ All config in `src/mqe/config.py`.
 | `trail_mult` | float | 2.0-4.0 | 3.0 |
 | `hard_stop_mult` | float | 1.5-4.0 | 2.5 |
 | `max_hold_bars` | int | 48-168 | 168 |
+| `vol_sensitivity` | float | 0.3-2.5 | 1.0 |
 
 Lower tiers have progressively tighter ranges (e.g. B-tier: macd_fast 1.0-12.0, hard_stop_mult 1.5-2.0).
 
