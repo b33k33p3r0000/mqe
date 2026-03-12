@@ -175,6 +175,59 @@ def render_portfolio_panel(
     )
 
 
+def render_tier_pbo_table(
+    pipeline_result: dict[str, Any],
+) -> Table | None:
+    """Build Rich table with tier assignments + PBO scores."""
+    tier_data = pipeline_result.get("tier_assignments", {})
+    pbo_data = pipeline_result.get("pbo_results", {})
+    if not tier_data:
+        return None
+
+    table = Table(
+        title="Tier Assignments + PBO",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Symbol", style="bold", min_width=12)
+    table.add_column("WF Tier", justify="center", min_width=8)
+    table.add_column("OOS Sharpe", justify="right", min_width=10)
+    table.add_column("Degradation", justify="right", min_width=10)
+    table.add_column("PBO", justify="right", min_width=8)
+    table.add_column("PBO Action", justify="center", min_width=12)
+    table.add_column("Final Tier", justify="center", min_width=10)
+    table.add_column("Multiplier", justify="right", min_width=10)
+
+    for symbol in sorted(tier_data.keys()):
+        t = tier_data[symbol]
+        pbo = pbo_data.get(symbol, {})
+        wf_tier = pbo.get("wf_tier", t.get("tier", "?"))
+        final_tier = pbo.get("final_tier", t.get("tier", "?"))
+        pbo_score = pbo.get("pbo_score", -1)
+        pbo_action = pbo.get("pbo_action", "-")
+
+        pbo_str = f"{pbo_score:.2f}" if pbo_score >= 0 else "-"
+        pbo_style = (
+            "bold red" if pbo_score > 0.50
+            else "bold yellow" if pbo_score > 0.30
+            else "" if pbo_score >= 0
+            else "dim"
+        )
+
+        table.add_row(
+            symbol,
+            wf_tier,
+            _fmt(t.get("sharpe", 0)),
+            _fmt(t.get("degradation", 0)),
+            Text(pbo_str, style=pbo_style),
+            pbo_action,
+            final_tier,
+            _fmt(t.get("multiplier", 0)),
+        )
+
+    return table
+
+
 def print_report(
     analysis: dict[str, Any],
     pipeline_result: dict[str, Any] | None = None,
@@ -202,6 +255,11 @@ def print_report(
         if stage1:
             params_table = render_params_table(stage1)
             console.print(params_table)
+            console.print()
+
+        tier_pbo_table = render_tier_pbo_table(pipeline_result)
+        if tier_pbo_table is not None:
+            console.print(tier_pbo_table)
             console.print()
 
     panel = render_portfolio_panel(portfolio, eval_result)
@@ -283,6 +341,34 @@ def generate_markdown_report(
                 else:
                     row += f" {val} |"
             lines.append(row)
+        lines.append("")
+
+    # ── Tier Assignments + PBO ──
+    tier_data = pipeline_result.get("tier_assignments", {})
+    pbo_data = pipeline_result.get("pbo_results", {})
+    if tier_data:
+        lines.append("### Tier Assignments + PBO")
+        lines.append("")
+        lines.append("| Symbol | WF Tier | OOS Sharpe | Degradation | PBO | PBO Action | Final Tier | Mult |")
+        lines.append("|--------|---------|------------|-------------|-----|------------|------------|------|")
+        for symbol in sorted(tier_data.keys()):
+            t = tier_data[symbol]
+            pbo = pbo_data.get(symbol, {})
+            wf_tier = pbo.get("wf_tier", t.get("tier", "?"))
+            final_tier = pbo.get("final_tier", t.get("tier", "?"))
+            pbo_score = pbo.get("pbo_score", -1)
+            pbo_action = pbo.get("pbo_action", "-")
+            pbo_str = f"{pbo_score:.2f}" if pbo_score >= 0 else "-"
+            lines.append(
+                f"| {symbol} "
+                f"| {wf_tier} "
+                f"| {t.get('sharpe', 0):.2f} "
+                f"| {t.get('degradation', 0):.2f} "
+                f"| {pbo_str} "
+                f"| {pbo_action} "
+                f"| {final_tier} "
+                f"| {t.get('multiplier', 0):.2f} |"
+            )
         lines.append("")
 
     # ── Issues ──

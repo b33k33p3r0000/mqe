@@ -661,39 +661,109 @@ def _render_per_pair_equity_curves(
     return f'<div class="grid-3col">{"".join(charts)}</div>'
 
 
-def _render_tier_table(analysis: Dict[str, Any]) -> str:
-    tier_data = analysis.get("tier_assignments", {})
+def _render_tier_table(pipeline_result: Dict[str, Any]) -> str:
+    tier_data = pipeline_result.get("tier_assignments", {})
+    pbo_data = pipeline_result.get("pbo_results", {})
     if not tier_data:
         return '<div class="no-data">No tier assignment data available</div>'
 
-    headers = ["Symbol", "Tier", "Multiplier", "OOS Sharpe", "Degradation", "Consistency", "Worst Sharpe"]
+    headers = ["Symbol", "WF Tier", "OOS Sharpe", "Degradation", "Consistency",
+               "Worst Sharpe", "PBO", "PBO Action", "Final Tier", "Mult"]
     header_row = "".join(f"<th>{h}</th>" for h in headers)
 
     rows = []
     for symbol in sorted(tier_data.keys()):
         t = tier_data[symbol]
-        tier = t.get("tier", "—")
-        tier_cls = f"tier-{tier.lower()}" if tier in ("A", "B", "C", "S", "X") else ""
-        multiplier = t.get("multiplier", 0)
-        sharpe = t.get("sharpe", 0)
-        degradation = t.get("degradation", 0)
-        consistency = t.get("consistency", 0)
-        worst = t.get("worst_sharpe", 0)
+        pbo = pbo_data.get(symbol, {})
+        wf_tier = pbo.get("wf_tier", t.get("tier", "—"))
+        final_tier = pbo.get("final_tier", t.get("tier", "—"))
+        pbo_score = pbo.get("pbo_score", -1)
+        pbo_action = pbo.get("pbo_action", "-")
+
+        tier_cls = f"tier-{final_tier.lower()}" if final_tier in ("A", "B", "C", "S", "X") else ""
+        pbo_str = f"{pbo_score:.2f}" if pbo_score >= 0 else "—"
+        pbo_cls = (
+            "tier-x" if pbo_score > 0.50
+            else "tier-c" if pbo_score > 0.30
+            else ""
+        )
 
         row = (
             f"<tr>"
             f"<td>{symbol}</td>"
-            f'<td class="{tier_cls}">{tier}</td>'
-            f"<td>{multiplier:.2f}</td>"
-            f"<td>{sharpe:.2f}</td>"
-            f"<td>{degradation:.2f}</td>"
-            f"<td>{consistency:.2f}</td>"
-            f"<td>{worst:.2f}</td>"
+            f"<td>{wf_tier}</td>"
+            f"<td>{t.get('sharpe', 0):.2f}</td>"
+            f"<td>{t.get('degradation', 0):.2f}</td>"
+            f"<td>{t.get('consistency', 0):.2f}</td>"
+            f"<td>{t.get('worst_sharpe', 0):.2f}</td>"
+            f'<td class="{pbo_cls}">{pbo_str}</td>'
+            f"<td>{pbo_action}</td>"
+            f'<td class="{tier_cls}">{final_tier}</td>'
+            f"<td>{t.get('multiplier', 0):.2f}</td>"
             f"</tr>"
         )
         rows.append(row)
 
     return f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+
+
+def _render_pbo_chart(pipeline_result: Dict[str, Any]) -> str:
+    """Render PBO bar chart with threshold lines at 0.30 and 0.50."""
+    pbo_data = pipeline_result.get("pbo_results", {})
+    if not pbo_data:
+        return '<div class="no-data">No PBO data available</div>'
+
+    symbols = sorted(pbo_data.keys())
+    scores = [pbo_data[s].get("pbo_score", 0) for s in symbols]
+    short_symbols = [s.split("/")[0] for s in symbols]
+
+    colors = []
+    for sc in scores:
+        if sc < 0:
+            colors.append("var(--text-muted)")
+        elif sc > 0.50:
+            colors.append("var(--accent-red)")
+        elif sc > 0.30:
+            colors.append("var(--accent-yellow)")
+        else:
+            colors.append("var(--accent-green)")
+
+    div_id = "pbo-chart"
+    return f"""
+    <h3>PBO — Probability of Backtest Overfitting</h3>
+    <div id="{div_id}" style="width:100%;height:350px;"></div>
+    <script>
+    Plotly.newPlot("{div_id}", [{{
+        x: {json.dumps(short_symbols)},
+        y: {json.dumps(scores)},
+        type: "bar",
+        marker: {{ color: {json.dumps(colors)} }}
+    }}], {{
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        font: {{ color: "#c8d3f5", family: "JetBrains Mono, monospace" }},
+        yaxis: {{ title: "PBO Score", gridcolor: "#3b4261", range: [0, 1] }},
+        xaxis: {{ gridcolor: "#3b4261" }},
+        shapes: [
+            {{ type: "line", x0: -0.5, x1: {len(symbols) - 0.5},
+               y0: 0.30, y1: 0.30,
+               line: {{ color: "#ffc777", width: 2, dash: "dash" }} }},
+            {{ type: "line", x0: -0.5, x1: {len(symbols) - 0.5},
+               y0: 0.50, y1: 0.50,
+               line: {{ color: "#ff757f", width: 2, dash: "dash" }} }}
+        ],
+        annotations: [
+            {{ x: {len(symbols) - 0.5}, y: 0.30, text: "demote",
+               showarrow: false, xanchor: "right",
+               font: {{ color: "#ffc777", size: 10 }} }},
+            {{ x: {len(symbols) - 0.5}, y: 0.50, text: "exclude",
+               showarrow: false, xanchor: "right",
+               font: {{ color: "#ff757f", size: 10 }} }}
+        ],
+        margin: {{ t: 20, r: 20, b: 40, l: 60 }}
+    }}, {{ responsive: true }});
+    </script>
+    """
 
 
 def _render_wf_evaluation(eval_result: Dict[str, Any]) -> str:
@@ -1670,7 +1740,8 @@ def generate_html_report(
     concurrent = _render_concurrent_positions(portfolio_trades, timestamps)
     per_pair_tbl = _render_per_pair_table(pipeline_result, eval_result)
     per_pair_eq = _render_per_pair_equity_curves(pair_equity_curves, timestamps)
-    tier_tbl = _render_tier_table(analysis)
+    tier_tbl = _render_tier_table(pipeline_result)
+    pbo_chart = _render_pbo_chart(pipeline_result)
     wf_eval = _render_wf_evaluation(eval_result)
     s1_params = _render_s1_params_table(pipeline_result)
     s1_bullet = _render_s1_bullet_chart(pipeline_result)
@@ -1710,6 +1781,7 @@ def generate_html_report(
 {per_pair_tbl}
 {per_pair_eq}
 {tier_tbl}
+{pbo_chart}
 {wf_eval}
 {divider_s1}
 {s1_params}

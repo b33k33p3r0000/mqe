@@ -86,11 +86,15 @@ def format_start_message(
     )
 
 
-def format_complete_message(analysis: dict[str, Any]) -> str:
+def format_complete_message(
+    analysis: dict[str, Any],
+    pipeline_result: dict[str, Any] | None = None,
+) -> str:
     """Format pipeline completion notification.
 
     Args:
         analysis: Full analysis dict from analyze_run().
+        pipeline_result: Pipeline combined dict (for PBO results).
 
     Returns:
         Formatted Discord message string.
@@ -116,6 +120,15 @@ def format_complete_message(analysis: dict[str, Any]) -> str:
 
     lines.append("-" * 30)
     lines.append(f"PORTFOLIO:  {portfolio_verdict}  Calmar={portfolio_calmar:.2f}")
+
+    # PBO summary
+    pbo_data = (pipeline_result or {}).get("pbo_results", {})
+    if pbo_data:
+        pbo_excluded = sum(1 for p in pbo_data.values() if p.get("pbo_action") == "excluded")
+        pbo_demoted = sum(1 for p in pbo_data.values() if p.get("pbo_action") == "demoted")
+        if pbo_excluded or pbo_demoted:
+            lines.append(f"PBO:        {pbo_excluded} excluded, {pbo_demoted} demoted")
+
     lines.append("```")
 
     return "\n".join(lines)
@@ -127,7 +140,10 @@ def notify_start(**kwargs: Any) -> bool:
     return discord_notify(msg, DISCORD_WEBHOOK_RUNS)
 
 
-def notify_complete(analysis: dict[str, Any]) -> bool:
+def notify_complete(
+    analysis: dict[str, Any],
+    pipeline_result: dict[str, Any] | None = None,
+) -> bool:
     """Send completion notification to Discord."""
-    msg = format_complete_message(analysis)
+    msg = format_complete_message(analysis, pipeline_result=pipeline_result)
     return discord_notify(msg, DISCORD_WEBHOOK_RUNS)

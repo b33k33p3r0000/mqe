@@ -860,7 +860,7 @@ def run_pipeline(
     save_markdown_report(
         output_dir / "report.md", combined, eval_result, analysis,
     )
-    notify_complete(analysis)
+    notify_complete(analysis, pipeline_result=combined)
 
     # ── HTML report ──────────────────────────────────────────────
     try:
@@ -1111,7 +1111,7 @@ def resume_pipeline(
     save_markdown_report(
         output_dir / "report.md", combined, eval_result, analysis,
     )
-    notify_complete(analysis)
+    notify_complete(analysis, pipeline_result=combined)
 
     # ── HTML report ──────────────────────────────────────────────
     try:

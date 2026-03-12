@@ -429,7 +429,8 @@ def tier_analysis():
 
 def test_tier_table_column_headers(tier_analysis):
     html = _render_tier_table(tier_analysis)
-    for header in ["Symbol", "Tier", "Multiplier", "OOS Sharpe", "Degradation", "Consistency", "Worst Sharpe"]:
+    for header in ["Symbol", "WF Tier", "OOS Sharpe", "Degradation", "Consistency",
+                    "Worst Sharpe", "PBO", "PBO Action", "Final Tier", "Mult"]:
         assert header in html
 
 
