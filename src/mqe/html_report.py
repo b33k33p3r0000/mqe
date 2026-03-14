@@ -360,8 +360,10 @@ tr:hover td {
 .report-content {
     flex: 1;
     min-width: 0;
+    width: calc(100% - 200px);
     padding: 24px 40px;
     max-width: 1920px;
+    overflow-x: hidden;
 }
 
 @media (max-width: 900px) {
@@ -2749,6 +2751,10 @@ def generate_html_report(
   }, {rootMargin: '-50% 0px -50% 0px'});
   sections.forEach(function(s) { observer.observe(s.el); });
 })();
+// Trigger resize after layout to fix Plotly parcoords in flex containers
+window.addEventListener('load', function() {
+  setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 100);
+});
 </script>"""
 
     body = f"""
