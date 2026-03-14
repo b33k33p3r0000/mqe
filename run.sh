@@ -70,6 +70,7 @@ WORKERS=""
 FOREGROUND=false
 SYMBOLS_OVERRIDE=""
 PRESET=""
+NO_GARCH=false
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
@@ -331,6 +332,18 @@ if [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
             ;;
     esac
 
+    # GARCH toggle
+    echo ""
+    echo "GARCH volatility adjustment:"
+    echo "  1) Enabled  — position sizing adapts to GARCH vol forecast (default)"
+    echo "  2) Disabled — flat position sizing (for A/B comparison)"
+    echo ""
+    read -p "GARCH mode (1-2) [1]: " garch_choice
+    case "${garch_choice:-1}" in
+        2) NO_GARCH=true ;;
+        *) NO_GARCH=false ;;
+    esac
+
     if [ -z "$TAG" ]; then
         read -p "Run tag (optional): " TAG
     fi
@@ -366,6 +379,9 @@ build_cmd() {
     if [ -n "$WORKERS" ]; then
         cmd="$cmd --workers $WORKERS"
     fi
+    if $NO_GARCH; then
+        cmd="$cmd --no-garch"
+    fi
     echo "$cmd"
 }
 
@@ -383,7 +399,8 @@ echo "════════════════════════�
 echo "  MQE Optimizer — Multi-pair Quant Engine"
 echo "═══════════════════════════════════════════════════════"
 [ -n "$PRESET" ] && echo "  Preset:    $PRESET"
-echo "  S1 trials: adaptive (<2.5yr=35k, >=2.5yr=50k, >=4.5yr=65k)"
+echo "  S1 trials: adaptive (<2.5yr=20k, >=2.5yr=30k, >=4.5yr=50k)"
+$NO_GARCH && echo "  GARCH:     DISABLED"
 echo "  S2 trials: $S2_TRIALS (portfolio)"
 echo "  Hours:     $HOURS (~$((HOURS / 24)) days)"
 echo "  Symbols:   $SYMBOL_COUNT pairs"
