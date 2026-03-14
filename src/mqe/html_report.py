@@ -370,14 +370,15 @@ def _render_portfolio_equity_curve(
     if not portfolio_equity_curve:
         return '<div class="no-data">No equity data available</div>'
 
-    # Compute high-water mark and drawdown
+    # Compute high-water mark and drawdown (in %)
     hwm = []
     drawdown = []
     running_max = float("-inf")
     for val in portfolio_equity_curve:
         running_max = max(running_max, val)
         hwm.append(running_max)
-        drawdown.append(val - running_max)
+        dd_pct = ((val - running_max) / running_max * 100) if running_max > 0 else 0.0
+        drawdown.append(dd_pct)
 
     # Use timestamps if available, otherwise generate indices
     x_data = timestamps if timestamps else list(range(len(portfolio_equity_curve)))
@@ -421,7 +422,7 @@ def _render_portfolio_equity_curve(
     legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
     xaxis: {{gridcolor: '#3b4261', showgrid: true}},
     yaxis: {{title: 'Equity ($)', gridcolor: '#3b4261', showgrid: true}},
-    yaxis2: {{title: 'Drawdown ($)', overlaying: 'y', side: 'right', gridcolor: '#3b4261', showgrid: false}}
+    yaxis2: {{title: 'Drawdown (%)', overlaying: 'y', side: 'right', gridcolor: '#3b4261', showgrid: false}}
   }};
   Plotly.newPlot('portfolio-equity-chart', traces, layout, {{responsive: true}});
 }})();
@@ -439,8 +440,10 @@ def _render_concurrent_positions(
     # Collect all entry/exit events
     events: List[tuple] = []
     for trade in portfolio_trades:
-        entry_ts = trade.get("entry_time") or trade.get("entry_timestamp")
-        exit_ts = trade.get("exit_time") or trade.get("exit_timestamp")
+        entry_ts = (trade.get("entry_time") or trade.get("entry_timestamp")
+                    or trade.get("entry_ts"))
+        exit_ts = (trade.get("exit_time") or trade.get("exit_timestamp")
+                   or trade.get("exit_ts"))
         if entry_ts and exit_ts:
             events.append((entry_ts, 1))
             events.append((exit_ts, -1))
@@ -511,7 +514,9 @@ def _build_equity_curve_from_trades(
         return []
     equity = start_equity
     curve = [equity]
-    for t in sorted(trades, key=lambda x: x.get("exit_bar", 0)):
+    # Sort by exit_bar if available, otherwise by exit_ts
+    sort_key = "exit_bar" if "exit_bar" in trades[0] else "exit_ts"
+    for t in sorted(trades, key=lambda x: x.get(sort_key, 0)):
         equity += t.get("pnl_abs", 0)
         curve.append(equity)
     return curve
@@ -520,20 +525,21 @@ def _build_equity_curve_from_trades(
 def _render_per_pair_table(
     pipeline_result: Dict[str, Any],
     eval_result: Dict[str, Any],
+    analysis: Dict[str, Any] | None = None,
 ) -> str:
     per_pair = eval_result.get("per_pair_metrics", {})
     if not per_pair:
         return '<div class="no-data">No per-pair data available</div>'
 
     tiers = pipeline_result.get("tier_assignments", {})
-    # Build verdict lookup from analysis if available
-    analysis = pipeline_result.get("analysis", {})
-    verdict_list = analysis.get("per_pair", []) if isinstance(analysis, dict) else []
+    # Build verdict lookup from analysis
     verdict_map: Dict[str, str] = {}
-    if isinstance(verdict_list, list):
-        for entry in verdict_list:
-            if isinstance(entry, dict):
-                verdict_map[entry.get("symbol", "")] = entry.get("verdict", "—")
+    if analysis:
+        verdict_list = analysis.get("per_pair", [])
+        if isinstance(verdict_list, list):
+            for entry in verdict_list:
+                if isinstance(entry, dict):
+                    verdict_map[entry.get("symbol", "")] = entry.get("verdict", "—")
 
     headers = ["Symbol", "Tier", "Verdict", "Trades/yr", "Sharpe", "Calmar", "Max DD%", "PnL%", "Win Rate", "PF"]
     header_row = "".join(f"<th>{h}</th>" for h in headers)
@@ -559,9 +565,9 @@ def _render_per_pair_table(
         trades_yr = m.get("trades_per_year", 0)
         sharpe = m.get("sharpe_ratio_equity_based", 0)
         calmar = m.get("calmar_ratio", 0)
-        max_dd = abs(m.get("max_drawdown", 0)) * 100
+        max_dd = abs(m.get("max_drawdown", 0))
         pnl_pct = m.get("total_pnl_pct", 0)
-        win_rate = m.get("win_rate", 0) * 100
+        win_rate = m.get("win_rate", 0)
         pf = m.get("profit_factor", 0)
 
         row = (
@@ -856,7 +862,6 @@ PARAM_RANGES = {
     "rsi_lower": (20, 40),
     "rsi_upper": (60, 80),
     "rsi_lookback": (1, 4),
-    "trend_tf": (0, 3),
     "adx_threshold": (15, 35),
     "trail_mult": (1.0, 5.0),
     "hard_stop_mult": (1.0, 5.0),
@@ -977,8 +982,8 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
                 f"<tr>"
                 f"<td>{i + 1}</td>"
                 f"<td>{t.get('objective', 0):.4f}</td>"
-                f"<td>{m.get('sharpe_ratio_equity_based', m.get('sharpe', 0)):.2f}</td>"
-                f"<td>{abs(m.get('max_drawdown', 0)) * 100:.1f}%</td>"
+                f"<td>{m.get('sharpe_equity', m.get('sharpe_ratio_equity_based', m.get('sharpe', 0))):.2f}</td>"
+                f"<td>{abs(m.get('max_drawdown', 0)):.1f}%</td>"
                 f"<td>{m.get('total_pnl_pct', m.get('pnl_pct', 0)):.1f}%</td>"
                 f"<td>{m.get('trades_per_year', 0):.0f}</td>"
                 f"</tr>"
@@ -991,9 +996,21 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
 
         # ── Parallel Coordinates Chart ──
         # Build dimensions from params of top trials
+        # Filter out fixed/categorical params (no variance or non-numeric)
+        _EXCLUDED_PARAMS = {"allow_flip", "trend_strict", "trend_tf"}
         param_keys = []
         if trials:
-            param_keys = sorted(trials[0].get("params", {}).keys())
+            for pk in sorted(trials[0].get("params", {}).keys()):
+                if pk in _EXCLUDED_PARAMS:
+                    continue
+                vals = [t.get("params", {}).get(pk, 0) for t in trials]
+                # Skip non-numeric
+                if not all(isinstance(v, (int, float)) for v in vals):
+                    continue
+                # Skip params with no variance (all identical)
+                if len(set(vals)) <= 1:
+                    continue
+                param_keys.append(pk)
 
         dimensions = []
         for pk in param_keys:
@@ -1036,11 +1053,13 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
 
         # ── Scatter: Sharpe vs Max DD ──
         scatter_sharpe = [
-            t.get("metrics", {}).get("sharpe_ratio_equity_based", t.get("metrics", {}).get("sharpe", 0))
+            t.get("metrics", {}).get("sharpe_equity",
+                t.get("metrics", {}).get("sharpe_ratio_equity_based",
+                    t.get("metrics", {}).get("sharpe", 0)))
             for t in trials
         ]
         scatter_dd = [
-            abs(t.get("metrics", {}).get("max_drawdown", 0)) * 100
+            abs(t.get("metrics", {}).get("max_drawdown", 0))
             for t in trials
         ]
         scatter_obj = [t.get("objective", 0) for t in trials]
@@ -1734,11 +1753,18 @@ def generate_html_report(
     s2_trials = pipeline_result.get("s2_trials", pipeline_result.get("stage2_trials", "—"))
     hours = pipeline_result.get("duration_hours", pipeline_result.get("hours", "—"))
 
+    # Build per-pair equity curves from trades if not provided
+    if not pair_equity_curves and per_pair_trades:
+        for sym, trades in per_pair_trades.items():
+            curve = _build_equity_curve_from_trades(trades)
+            if curve:
+                pair_equity_curves[sym] = curve
+
     # Render all sections
     hero = _render_hero_metrics(pipeline_result, eval_result, analysis)
     portfolio_eq = _render_portfolio_equity_curve(portfolio_equity_curve, timestamps)
     concurrent = _render_concurrent_positions(portfolio_trades, timestamps)
-    per_pair_tbl = _render_per_pair_table(pipeline_result, eval_result)
+    per_pair_tbl = _render_per_pair_table(pipeline_result, eval_result, analysis)
     per_pair_eq = _render_per_pair_equity_curves(pair_equity_curves, timestamps)
     tier_tbl = _render_tier_table(pipeline_result)
     pbo_chart = _render_pbo_chart(pipeline_result)
