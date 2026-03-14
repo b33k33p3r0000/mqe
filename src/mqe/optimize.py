@@ -699,6 +699,7 @@ def run_pipeline(
     tag: str = "",
     max_workers: int | None = None,
     n_jobs: int | None = None,
+    no_garch: bool = False,
 ) -> dict[str, Any]:
     """Run full MQE optimization pipeline.
 
@@ -740,14 +741,18 @@ def run_pipeline(
     all_data = fetch_all_data(symbols, hours)
 
     # ── 1b. Pre-compute GARCH arrays ──
-    garch_arrays = compute_garch_arrays(all_data)
+    if no_garch:
+        garch_arrays = {}
+        logger.info("GARCH disabled (--no-garch)")
+    else:
+        garch_arrays = compute_garch_arrays(all_data)
 
     # ── 2. Stage 1: per-pair optimization (parallel) ──
     stage1_results = run_stage1_all_pairs(
         symbols, all_data, stage1_trials, max_workers,
         output_dir=output_dir,
         n_jobs=n_jobs,
-        garch_arrays=garch_arrays,
+        garch_arrays=garch_arrays if not no_garch else None,
     )
 
     # ── 3. Re-compute signals with best Stage 1 params ──
@@ -821,6 +826,21 @@ def run_pipeline(
                 tier_assignments[sym]["multiplier"] = 0.0
                 tier_multipliers[sym] = 0.0
 
+    # ── 6c. Calmar floor: cap at C if eval Calmar below threshold ──
+    from mqe.config import TIER_CALMAR_FLOOR
+    for sym, metrics in per_pair_metrics.items():
+        eval_calmar = metrics.get("calmar_ratio", 0.0)
+        if eval_calmar < TIER_CALMAR_FLOOR and sym in tier_assignments:
+            old_tier = tier_assignments[sym]["tier"]
+            if old_tier in ("A", "B"):
+                logger.warning(
+                    "Calmar floor: %s demoted %s -> C (eval Calmar %.2f < %.1f)",
+                    sym, old_tier, eval_calmar, TIER_CALMAR_FLOOR,
+                )
+                tier_assignments[sym]["tier"] = "C"
+                tier_assignments[sym]["multiplier"] = TIER_MULTIPLIERS["C"]
+                tier_multipliers[sym] = TIER_MULTIPLIERS["C"]
+
     # ── 7. Stage 2: portfolio optimization ──
     stage2_result = run_stage2(
         all_data, pair_signals, pair_params, stage2_trials,
@@ -845,7 +865,7 @@ def run_pipeline(
         "tag": tag,
         "hours": hours,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "garch_computed": True,
+        "garch_computed": not no_garch,
         "stage1_results": stage1_results,
         "stage2_results": stage2_result,
         "tier_assignments": tier_assignments,
@@ -951,6 +971,7 @@ def resume_pipeline(
     hours: int | None = None,
     tag: str = "",
     n_jobs: int | None = None,
+    no_garch: bool = False,
 ) -> dict[str, Any]:
     """Resume MQE pipeline from Stage 2 using existing Stage 1 results.
 
@@ -1000,7 +1021,11 @@ def resume_pipeline(
     all_data = fetch_all_data(symbols, hours)
 
     # ── 3b. Pre-compute GARCH arrays ──
-    garch_arrays = compute_garch_arrays(all_data)
+    if no_garch:
+        garch_arrays = {}
+        logger.info("GARCH disabled (--no-garch)")
+    else:
+        garch_arrays = compute_garch_arrays(all_data)
 
     # ── 4. Re-compute signals with Stage 1 params ──
     pair_params = {
@@ -1066,6 +1091,21 @@ def resume_pipeline(
                 tier_assignments[sym]["tier"] = "X"
                 tier_assignments[sym]["multiplier"] = 0.0
                 tier_multipliers[sym] = 0.0
+
+    # ── 7c. Calmar floor: cap at C if eval Calmar below threshold ──
+    from mqe.config import TIER_CALMAR_FLOOR
+    for sym, metrics in per_pair_metrics.items():
+        eval_calmar = metrics.get("calmar_ratio", 0.0)
+        if eval_calmar < TIER_CALMAR_FLOOR and sym in tier_assignments:
+            old_tier = tier_assignments[sym]["tier"]
+            if old_tier in ("A", "B"):
+                logger.warning(
+                    "Calmar floor: %s demoted %s -> C (eval Calmar %.2f < %.1f)",
+                    sym, old_tier, eval_calmar, TIER_CALMAR_FLOOR,
+                )
+                tier_assignments[sym]["tier"] = "C"
+                tier_assignments[sym]["multiplier"] = TIER_MULTIPLIERS["C"]
+                tier_multipliers[sym] = TIER_MULTIPLIERS["C"]
 
     # ── 8. Stage 2: portfolio optimization ──
     stage2_result = run_stage2(
@@ -1214,6 +1254,10 @@ def main() -> None:
         "--resume", type=str, default=None, metavar="PATH",
         help="Resume from Stage 2 using existing run directory (e.g. results/20260304_194135)",
     )
+    parser.add_argument(
+        "--no-garch", action="store_true", default=False,
+        help="Disable GARCH vol_sensitivity (for A/B comparison runs)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -1230,6 +1274,7 @@ def main() -> None:
             hours=resume_hours,
             tag=args.tag,
             n_jobs=args.s1_jobs,
+            no_garch=args.no_garch,
         )
     else:
         output_dir = Path(args.output) if args.output else None
@@ -1242,6 +1287,7 @@ def main() -> None:
             tag=args.tag,
             max_workers=args.workers,
             n_jobs=args.s1_jobs,
+            no_garch=args.no_garch,
         )
 
 

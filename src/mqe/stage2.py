@@ -78,7 +78,7 @@ def build_portfolio_objective(
             "max_concurrent", min(3, n_pairs), min(n_pairs, 10)
         )
         cluster_max = trial.suggest_int("cluster_max", 1, 3)
-        portfolio_heat = trial.suggest_float("portfolio_heat", 0.15, 0.50)
+        portfolio_heat = trial.suggest_float("portfolio_heat", 0.05, 0.15)
         corr_gate_threshold = trial.suggest_float("corr_gate_threshold", 0.50, 0.80)
 
         # Build cluster_max dict from the single optimized value

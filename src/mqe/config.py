@@ -386,9 +386,9 @@ MONTE_CARLO_MIN_TRADES = 20
 
 TRIALS_LONG_THRESHOLD_HOURS = 39420   # >= 4.5yr → full trials
 TRIALS_MEDIUM_THRESHOLD_HOURS = 21900  # >= 2.5yr → medium trials
-TRIALS_LONG = 65_000
-TRIALS_MEDIUM = 50_000
-TRIALS_SHORT = 35_000
+TRIALS_LONG = 50_000
+TRIALS_MEDIUM = 30_000
+TRIALS_SHORT = 20_000
 
 # ─── ANCHORED WALK-FORWARD ──────────────────────────────────────────────────
 
@@ -432,6 +432,7 @@ TIER_CONSISTENCY_A = 1.5          # max Sharpe std for A tier
 TIER_WORST_WINDOW_A = 0.5         # min worst OOS window Sharpe for A tier
 TIER_WORST_WINDOW_B = -0.2        # min worst OOS window Sharpe for B tier
 TIER_WORST_WINDOW_C = -1.0        # min worst OOS window Sharpe for C tier
+TIER_CALMAR_FLOOR = 0.5           # min eval Calmar to stay above C tier
 
 # ─── DATA FETCHING ──────────────────────────────────────────────────────────
 

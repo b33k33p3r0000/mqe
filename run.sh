@@ -28,7 +28,7 @@ Presets (interactive menu when no CLI args):
   4) Custom     — You choose everything
 
 S1 trials are data-adaptive (automatic per pair):
-  <2.5yr data = 35k | >=2.5yr = 50k | >=4.5yr = 65k
+  <2.5yr data = 20k | >=2.5yr = 30k | >=4.5yr = 50k
 
 Default: --hours 26280 (~3yr). Runs in background (--fg for foreground).
 
