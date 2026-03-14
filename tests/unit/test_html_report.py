@@ -461,6 +461,13 @@ def test_per_pair_table_verdict_fail():
     assert "verdict-fail" in html
 
 
+def test_per_pair_table_has_sort_js(per_pair_pipeline_result, per_pair_eval_result):
+    html = _render_per_pair_table(per_pair_pipeline_result, per_pair_eval_result)
+    assert 'id="per-pair-table"' in html
+    assert "sortTable" in html
+    assert "sortable" in html
+
+
 # ─── Per-Pair Equity Curves Grid (Task 13) ───
 
 

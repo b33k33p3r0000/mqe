@@ -860,17 +860,25 @@ def _render_per_pair_table(
         per_pair = {s: m for s, m in per_pair.items() if s not in excluded_symbols}
 
     tiers = pipeline_result.get("tier_assignments", {})
-    # Build verdict lookup from analysis
+    # Build verdict lookup from analysis (explicit param or fallback to pipeline_result["analysis"])
     verdict_map: Dict[str, str] = {}
-    if analysis:
-        verdict_list = analysis.get("per_pair", [])
+    effective_analysis = analysis or pipeline_result.get("analysis")
+    if effective_analysis:
+        verdict_list = effective_analysis.get("per_pair", [])
         if isinstance(verdict_list, list):
             for entry in verdict_list:
                 if isinstance(entry, dict):
                     verdict_map[entry.get("symbol", "")] = entry.get("verdict", "—")
 
     headers = ["Symbol", "Tier", "Verdict", "Trades/yr", "Sharpe", "Calmar", "Max DD%", "PnL%", "Win Rate", "PF"]
-    header_row = "".join(f"<th>{h}</th>" for h in headers)
+    col_types = [False, False, False, True, True, True, True, True, True, True]  # numeric flags
+    header_cells = []
+    for idx, (h, is_num) in enumerate(zip(headers, col_types)):
+        num_str = "true" if is_num else "false"
+        header_cells.append(
+            f'<th class="sortable" onclick="sortTable(\'per-pair-table\',{idx},{num_str})">{h}</th>'
+        )
+    header_row = "".join(header_cells)
 
     rows = []
     for symbol in sorted(per_pair.keys()):
@@ -914,7 +922,34 @@ def _render_per_pair_table(
         )
         rows.append(row)
 
-    return f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+    sort_js = """<script>
+function sortTable(tableId, col, numeric) {
+  var table = document.getElementById(tableId);
+  var tbody = table.querySelector('tbody');
+  var rows = Array.from(tbody.querySelectorAll('tr'));
+  var asc = table.dataset.sortCol == col && table.dataset.sortDir == 'asc' ? false : true;
+  rows.sort(function(a, b) {
+    var av = a.cells[col].textContent.replace(/[%$,+]/g, '');
+    var bv = b.cells[col].textContent.replace(/[%$,+]/g, '');
+    if (numeric) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; }
+    return asc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+  rows.forEach(function(r) { tbody.appendChild(r); });
+  table.dataset.sortCol = col;
+  table.dataset.sortDir = asc ? 'asc' : 'desc';
+  var ths = table.querySelectorAll('th');
+  for (var i = 0; i < ths.length; i++) {
+    ths[i].textContent = ths[i].textContent.replace(/ [▲▼]/, '');
+    if (i == col) ths[i].textContent += asc ? ' ▲' : ' ▼';
+  }
+}
+</script>"""
+
+    return (
+        f'{sort_js}'
+        f'<table id="per-pair-table"><thead><tr>{header_row}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table>'
+    )
 
 
 def _render_per_pair_equity_curves(
