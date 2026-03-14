@@ -1,5 +1,21 @@
 # MQE Session Notes
 
+## 2026-03-14 — Monitor: eval phase visibility
+
+Monitor live dashboard nyní zobrazuje mezistavy pipeline mezi S1 a S2 místo generického "S2: waiting...".
+
+**Změny:**
+- `optimize.py`: PBO evaluace zapisuje `evaluation/pbo_progress.json` incrementálně (completed/total po každém páru), cleanup po dokončení
+- `monitor.py`: Nový `EvalPhaseProgress` dataclass + `load_eval_phase()` — detekuje fázi z přítomnosti souborů v `evaluation/`
+
+**Zobrazení v monitoru:**
+- `Eval: WF evaluation + tiering...` (žádný eval soubor)
+- `Eval: PBO ████░░░░░░ 8/15` (wf_eval_metrics.json existuje, PBO běží)
+- `Eval: Per-pair evaluation...` (pbo_results.json existuje)
+- `Eval: Starting S2...` (per_pair_metrics.json existuje)
+
+---
+
 ## 2026-03-14 — /analyze 20260312_133312
 
 **Verdict:** MEDIUM confidence — pipeline WF+PBO+tier works, portfolio DD well-controlled (-6.27%).

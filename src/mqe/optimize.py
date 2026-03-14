@@ -236,6 +236,10 @@ def run_pbo_evaluation(
             )
             futures[future] = symbol
 
+        eval_dir = output_dir / "evaluation"
+        eval_dir.mkdir(exist_ok=True)
+        pbo_progress_path = eval_dir / "pbo_progress.json"
+
         for future in as_completed(futures):
             symbol = futures[future]
             try:
@@ -270,9 +274,16 @@ def run_pbo_evaluation(
                 logger.error("PBO failed for %s: %s", symbol, e)
                 pbo_results[symbol] = {"pbo_score": -1, "error": str(e)}
 
-    eval_dir = output_dir / "evaluation"
-    eval_dir.mkdir(exist_ok=True)
+            # Write incremental progress for monitor
+            save_json(pbo_progress_path, {
+                "completed": len(pbo_results),
+                "total": len(pair_params),
+                "symbols_done": list(pbo_results.keys()),
+            })
+
     save_json(eval_dir / "pbo_results.json", pbo_results)
+    # Clean up progress file
+    pbo_progress_path.unlink(missing_ok=True)
     return pbo_results
 
 

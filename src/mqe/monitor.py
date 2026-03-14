@@ -103,6 +103,19 @@ class Stage2Progress:
     pareto_front_size: int = 0
 
 
+@dataclass
+class EvalPhaseProgress:
+    """Progress of intermediate evaluation phases between S1 and S2.
+
+    Pipeline order: WF eval -> tiering -> PBO -> per-pair eval -> S2.
+    Detected by presence of files in evaluation/ directory.
+    """
+
+    phase: str = "idle"  # "wf_eval", "pbo", "per_pair_eval", "pre_s2", "idle"
+    pbo_completed: int = 0
+    pbo_total: int = 0
+
+
 # ─── Data Loading ─────────────────────────────────────────────────────────────
 
 
@@ -321,6 +334,37 @@ def load_stage2_progress(run_dir: Path) -> Stage2Progress:
         )
 
     return Stage2Progress(status="pending")
+
+
+def load_eval_phase(run_dir: Path, n_symbols: int) -> EvalPhaseProgress:
+    """Detect which evaluation phase is running between S1 and S2.
+
+    File order in pipeline:
+      1. evaluation/wf_eval_metrics.json  (WF eval done)
+      2. evaluation/pbo_progress.json     (PBO running, incremental)
+      3. evaluation/pbo_results.json      (PBO done)
+      4. evaluation/per_pair_metrics.json  (per-pair eval done)
+      5. stage2_progress.json             (S2 started — handled elsewhere)
+    """
+    eval_dir = run_dir / "evaluation"
+    has_wf = (eval_dir / "wf_eval_metrics.json").exists()
+    has_pbo = (eval_dir / "pbo_results.json").exists()
+    has_per_pair = (eval_dir / "per_pair_metrics.json").exists()
+
+    if has_per_pair:
+        return EvalPhaseProgress(phase="pre_s2")
+    if has_pbo:
+        return EvalPhaseProgress(phase="per_pair_eval")
+    if has_wf:
+        # PBO running or about to start — check progress file
+        pbo_progress = _load_json(eval_dir / "pbo_progress.json")
+        pbo_done = pbo_progress.get("completed", 0) if pbo_progress else 0
+        pbo_total = pbo_progress.get("total", n_symbols) if pbo_progress else n_symbols
+        return EvalPhaseProgress(
+            phase="pbo", pbo_completed=pbo_done, pbo_total=pbo_total,
+        )
+    # WF eval or signal recomputation
+    return EvalPhaseProgress(phase="wf_eval")
 
 
 def find_active_run(results_dir: Path) -> Optional[Path]:
@@ -597,6 +641,7 @@ def render_live_table(
     tag: str = "",
     elapsed_s: int = 0,
     s2_progress: Optional[Stage2Progress] = None,
+    eval_phase: Optional[EvalPhaseProgress] = None,
 ) -> Table:
     """Render Rich Table for live optimization progress."""
     title = "MQE Live"
@@ -731,7 +776,27 @@ def render_live_table(
                 f"Pareto {s2.pareto_front_size}"
             )
     elif n_done == n_total and n_total > 0:
-        caption += "\nS2: waiting..."
+        # S1 done, S2 not started — show intermediate eval phase
+        if eval_phase is not None and eval_phase.phase != "idle":
+            phase_labels = {
+                "wf_eval": "WF evaluation + tiering...",
+                "pbo": None,  # handled below with progress
+                "per_pair_eval": "Per-pair evaluation...",
+                "pre_s2": "Starting S2...",
+            }
+            if eval_phase.phase == "pbo":
+                bar = _progress_bar(
+                    eval_phase.pbo_completed, eval_phase.pbo_total, width=10,
+                )
+                caption += (
+                    f"\nEval: PBO {bar} "
+                    f"{eval_phase.pbo_completed}/{eval_phase.pbo_total}"
+                )
+            else:
+                label = phase_labels.get(eval_phase.phase, "Evaluating...")
+                caption += f"\nEval: {label}"
+        else:
+            caption += "\nS2: waiting..."
 
     table.caption = caption
 
@@ -772,9 +837,12 @@ def run_live_dashboard(
         # Single snapshot
         pairs = load_live_run(run_dir)
         s2 = load_stage2_progress(run_dir)
+        n_symbols = len(pairs)
+        eval_ph = load_eval_phase(run_dir, n_symbols) if s2.status == "pending" else None
         elapsed_s = int(time.time() - start_time)
         table = render_live_table(
-            pairs, tag=tag or run_id, elapsed_s=elapsed_s, s2_progress=s2,
+            pairs, tag=tag or run_id, elapsed_s=elapsed_s,
+            s2_progress=s2, eval_phase=eval_ph,
         )
         console.print(table)
         return
@@ -800,10 +868,12 @@ def run_live_dashboard(
 
                 pairs = load_live_run(run_dir)
                 s2 = load_stage2_progress(run_dir)
+                n_symbols = len(pairs)
+                eval_ph = load_eval_phase(run_dir, n_symbols) if s2.status == "pending" else None
                 elapsed_s = int(time.time() - start_time)
                 table = render_live_table(
                     pairs, tag=tag or run_id, elapsed_s=elapsed_s,
-                    s2_progress=s2,
+                    s2_progress=s2, eval_phase=eval_ph,
                 )
                 live.update(table)
                 time.sleep(refresh_interval)
