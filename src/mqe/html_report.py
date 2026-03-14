@@ -1928,6 +1928,419 @@ def _render_monthly_returns(
 </div>"""
 
 
+def _render_long_short_analysis(portfolio_trades: List[Dict[str, Any]]) -> str:
+    if not portfolio_trades:
+        return '<div id="sec-long-short" class="no-data">No trade data for long/short analysis</div>'
+
+    long_trades = [t for t in portfolio_trades if t.get("direction") == "long"]
+    short_trades = [t for t in portfolio_trades if t.get("direction") == "short"]
+
+    def _dir_stats(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+        count = len(trades)
+        wins = sum(1 for t in trades if t.get("pnl_abs", 0.0) > 0)
+        win_rate = (wins / count * 100) if count > 0 else 0.0
+        avg_pnl_pct = (sum(t.get("pnl_pct", 0.0) for t in trades) / count) if count > 0 else 0.0
+        total_pnl = sum(t.get("pnl_abs", 0.0) for t in trades)
+        avg_hold = (sum(t.get("hold_bars", 0) for t in trades) / count) if count > 0 else 0.0
+        return {
+            "count": count,
+            "win_rate": win_rate,
+            "avg_pnl_pct": avg_pnl_pct,
+            "total_pnl": total_pnl,
+            "avg_hold": avg_hold,
+        }
+
+    ls = _dir_stats(long_trades)
+    ss = _dir_stats(short_trades)
+
+    def _stat_card(label: str, stats: Dict[str, Any], border_color: str) -> str:
+        pnl_color = "#c3e88d" if stats["total_pnl"] >= 0 else "#ff757f"
+        avg_color = "#c3e88d" if stats["avg_pnl_pct"] >= 0 else "#ff757f"
+        return (
+            f'<div class="stat-card" style="border-top:3px solid {border_color};">'
+            f'<div class="stat-label" style="font-size:13px;font-weight:700;color:{border_color};margin-bottom:10px;">{label}</div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Trades</span>'
+            f'<span class="wf-metric-value">{stats["count"]}</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Win Rate</span>'
+            f'<span class="wf-metric-value">{stats["win_rate"]:.1f}%</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Avg PnL</span>'
+            f'<span class="wf-metric-value" style="color:{avg_color}">{stats["avg_pnl_pct"]:+.2f}%</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Total PnL</span>'
+            f'<span class="wf-metric-value" style="color:{pnl_color}">${stats["total_pnl"]:,.0f}</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Avg Hold</span>'
+            f'<span class="wf-metric-value">{stats["avg_hold"]:.1f} bars</span></div>'
+            f'</div>'
+        )
+
+    long_card = _stat_card("LONG", ls, "#c3e88d")
+    short_card = _stat_card("SHORT", ss, "#ff757f")
+    cards_html = f'<div class="stat-grid-2">{long_card}{short_card}</div>'
+
+    # Stacked bar chart
+    total_trades = ls["count"] + ss["count"]
+    long_trade_ratio = ls["count"] / total_trades if total_trades > 0 else 0.5
+    short_trade_ratio = ss["count"] / total_trades if total_trades > 0 else 0.5
+
+    total_pnl_abs = abs(ls["total_pnl"]) + abs(ss["total_pnl"])
+    long_pnl_ratio = abs(ls["total_pnl"]) / total_pnl_abs if total_pnl_abs > 0 else 0.5
+    short_pnl_ratio = abs(ss["total_pnl"]) / total_pnl_abs if total_pnl_abs > 0 else 0.5
+
+    chart_html = f"""<div class="chart-container" style="padding:12px;">
+<div id="long-short-chart" style="width:100%;height:120px;"></div>
+<script>
+(function() {{
+  var traces = [
+    {{
+      x: [{long_trade_ratio:.4f}, {long_pnl_ratio:.4f}],
+      y: ['Trades', 'PnL Contribution'],
+      type: 'bar', orientation: 'h',
+      name: 'Long', marker: {{color: '#c3e88d'}},
+      text: ['{ls["count"]}', '${ls["total_pnl"]:,.0f}'],
+      textposition: 'inside', insidetextanchor: 'middle',
+      textfont: {{color: '#222436', size: 11}}
+    }},
+    {{
+      x: [{short_trade_ratio:.4f}, {short_pnl_ratio:.4f}],
+      y: ['Trades', 'PnL Contribution'],
+      type: 'bar', orientation: 'h',
+      name: 'Short', marker: {{color: '#ff757f'}},
+      text: ['{ss["count"]}', '${ss["total_pnl"]:,.0f}'],
+      textposition: 'inside', insidetextanchor: 'middle',
+      textfont: {{color: '#222436', size: 11}}
+    }}
+  ];
+  var layout = {{
+    barmode: 'stack',
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    margin: {{l: 120, r: 20, t: 10, b: 20}},
+    showlegend: true,
+    legend: {{orientation: 'h', x: 0.5, xanchor: 'center', y: 1.2, font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{range: [0, 1], showgrid: false, showticklabels: false}},
+    yaxis: {{gridcolor: '#3b4261'}}
+  }};
+  Plotly.newPlot('long-short-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+    return f'<div id="sec-long-short">{cards_html}{chart_html}</div>'
+
+
+def _render_top_drawdowns(
+    portfolio_equity_curve: List[float],
+    timestamps: List[str],
+) -> str:
+    if len(portfolio_equity_curve) < 3:
+        return ""
+
+    # Find all drawdown episodes (non-overlapping peak->trough->recovery)
+    episodes: List[Dict[str, Any]] = []
+    n = len(portfolio_equity_curve)
+    i = 0
+
+    while i < n:
+        # Find local peak: move forward while equity is rising or flat
+        peak_idx = i
+        peak_val = portfolio_equity_curve[i]
+
+        # Advance to find where a drawdown starts
+        j = i + 1
+        while j < n and portfolio_equity_curve[j] >= peak_val:
+            if portfolio_equity_curve[j] > peak_val:
+                peak_idx = j
+                peak_val = portfolio_equity_curve[j]
+            j += 1
+
+        if j >= n:
+            break  # No drawdown from this peak
+
+        # We're now in a drawdown — find trough
+        trough_idx = j
+        trough_val = portfolio_equity_curve[j]
+        k = j + 1
+        while k < n and portfolio_equity_curve[k] <= peak_val:
+            if portfolio_equity_curve[k] < trough_val:
+                trough_idx = k
+                trough_val = portfolio_equity_curve[k]
+            k += 1
+
+        depth_pct = (trough_val - peak_val) / peak_val * 100  # negative
+
+        # Find recovery (first point >= peak after trough)
+        recovery_idx = None
+        m = trough_idx + 1
+        while m < n:
+            if portfolio_equity_curve[m] >= peak_val:
+                recovery_idx = m
+                break
+            m += 1
+
+        episodes.append({
+            "depth_pct": depth_pct,
+            "peak_idx": peak_idx,
+            "trough_idx": trough_idx,
+            "recovery_idx": recovery_idx,
+            "duration_bars": trough_idx - peak_idx,
+            "recovery_bars": (recovery_idx - trough_idx) if recovery_idx is not None else None,
+        })
+
+        # Move past the recovery (or past trough if no recovery)
+        i = recovery_idx if recovery_idx is not None else trough_idx + 1
+
+    if not episodes:
+        return ""
+
+    # Sort by depth (most negative first = deepest), take top 5
+    top5 = sorted(episodes, key=lambda e: e["depth_pct"])[:5]
+
+    def _ts(idx: int) -> str:
+        if timestamps and idx < len(timestamps):
+            return str(timestamps[idx])[:10]
+        return f"bar {idx}"
+
+    def _depth_color(depth_pct: float) -> str:
+        """Scale red intensity with severity."""
+        severity = min(abs(depth_pct) / 30.0, 1.0)  # 30% = full red
+        r = int(255)
+        g = int(117 + (1 - severity) * 100)
+        b = int(127 + (1 - severity) * 100)
+        return f"rgb({r},{g},{b})"
+
+    rows = []
+    for rank, ep in enumerate(top5, 1):
+        depth_color = _depth_color(ep["depth_pct"])
+        peak_ts = _ts(ep["peak_idx"])
+        trough_ts = _ts(ep["trough_idx"])
+        if ep["recovery_idx"] is not None:
+            recovery_ts = _ts(ep["recovery_idx"])
+            recovery_bars_str = str(ep["recovery_bars"])
+            recovery_cell = f'<td>{recovery_ts}</td>'
+        else:
+            recovery_cell = '<td style="color:#ffc777;">ongoing</td>'
+            recovery_bars_str = '<span style="color:#ffc777;">—</span>'
+
+        rows.append(
+            f"<tr>"
+            f"<td>{rank}</td>"
+            f'<td style="color:{depth_color};font-weight:600;">{ep["depth_pct"]:.2f}%</td>'
+            f"<td>{peak_ts}</td>"
+            f"<td>{trough_ts}</td>"
+            f"{recovery_cell}"
+            f"<td>{ep['duration_bars']}</td>"
+            f"<td>{recovery_bars_str}</td>"
+            f"</tr>"
+        )
+
+    headers = ["#", "Depth", "Peak", "Trough", "Recovery", "Duration (bars)", "Recovery (bars)"]
+    header_row = "".join(f"<th>{h}</th>" for h in headers)
+
+    return (
+        f'<div id="sec-top-drawdowns" class="chart-container">'
+        f'<h4 style="color:var(--accent-purple);margin-bottom:12px;">Top 5 Drawdown Episodes</h4>'
+        f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        f'</div>'
+    )
+
+
+def _render_streak_analysis(
+    portfolio_trades: List[Dict[str, Any]],
+    portfolio_metrics: Dict[str, Any],
+) -> str:
+    if not portfolio_trades:
+        return '<div id="sec-streaks" class="no-data">No trade data for streak analysis</div>'
+
+    # Build streak sequences from trades
+    win_streaks: List[int] = []
+    loss_streaks: List[int] = []
+    current_win = 0
+    current_loss = 0
+
+    for t in portfolio_trades:
+        pnl = t.get("pnl_abs", 0.0)
+        if pnl > 0:
+            if current_loss > 0:
+                loss_streaks.append(current_loss)
+                current_loss = 0
+            current_win += 1
+        elif pnl < 0:
+            if current_win > 0:
+                win_streaks.append(current_win)
+                current_win = 0
+            current_loss += 1
+        else:
+            # Breakeven: close any open streak
+            if current_win > 0:
+                win_streaks.append(current_win)
+                current_win = 0
+            if current_loss > 0:
+                loss_streaks.append(current_loss)
+                current_loss = 0
+
+    if current_win > 0:
+        win_streaks.append(current_win)
+    if current_loss > 0:
+        loss_streaks.append(current_loss)
+
+    # Stats — use portfolio_metrics if provided, otherwise compute from streak lists
+    max_win = portfolio_metrics.get("max_win_streak", max(win_streaks) if win_streaks else 0)
+    max_loss = portfolio_metrics.get("max_loss_streak", max(loss_streaks) if loss_streaks else 0)
+    avg_win = (sum(win_streaks) / len(win_streaks)) if win_streaks else 0.0
+    avg_loss = (sum(loss_streaks) / len(loss_streaks)) if loss_streaks else 0.0
+
+    cards_html = (
+        f'<div class="stat-grid-4">'
+        f'<div class="stat-card" style="border-top:3px solid #c3e88d;">'
+        f'<div class="stat-label">Max Win Streak</div>'
+        f'<div class="stat-value" style="color:#c3e88d;">{max_win}</div>'
+        f'</div>'
+        f'<div class="stat-card" style="border-top:3px solid #ff757f;">'
+        f'<div class="stat-label">Max Loss Streak</div>'
+        f'<div class="stat-value" style="color:#ff757f;">{max_loss}</div>'
+        f'</div>'
+        f'<div class="stat-card" style="border-top:3px solid #c3e88d;">'
+        f'<div class="stat-label">Avg Win Streak</div>'
+        f'<div class="stat-value" style="color:#c3e88d;">{avg_win:.1f}</div>'
+        f'</div>'
+        f'<div class="stat-card" style="border-top:3px solid #ff757f;">'
+        f'<div class="stat-label">Avg Loss Streak</div>'
+        f'<div class="stat-value" style="color:#ff757f;">{avg_loss:.1f}</div>'
+        f'</div>'
+        f'</div>'
+    )
+
+    # Build frequency distributions
+    win_max_len = max(win_streaks) if win_streaks else 0
+    loss_max_len = max(loss_streaks) if loss_streaks else 0
+    max_len = max(win_max_len, loss_max_len, 1)
+
+    win_freq: List[int] = [0] * (max_len + 1)
+    loss_freq: List[int] = [0] * (max_len + 1)
+    for s in win_streaks:
+        win_freq[s] += 1
+    for s in loss_streaks:
+        loss_freq[s] += 1
+
+    x_vals = list(range(1, max_len + 1))
+    win_y = win_freq[1:]
+    loss_y = loss_freq[1:]
+
+    x_json = json.dumps(x_vals)
+    win_json = json.dumps(win_y)
+    loss_json = json.dumps(loss_y)
+
+    chart_html = f"""<div class="chart-container">
+<div id="streak-chart" style="width:100%;height:250px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var traces = [
+    {{
+      x: x, y: {win_json}, type: 'bar', name: 'Win Streaks',
+      marker: {{color: '#c3e88d', opacity: 0.85}}
+    }},
+    {{
+      x: x, y: {loss_json}, type: 'bar', name: 'Loss Streaks',
+      marker: {{color: '#ff757f', opacity: 0.85}}
+    }}
+  ];
+  var layout = {{
+    barmode: 'group',
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Win/Loss Streak Distribution', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 50, r: 30, t: 40, b: 40}},
+    showlegend: true,
+    legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{title: 'Streak Length', gridcolor: '#3b4261', dtick: 1}},
+    yaxis: {{title: 'Frequency', gridcolor: '#3b4261'}}
+  }};
+  Plotly.newPlot('streak-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+    return f'<div id="sec-streaks">{cards_html}{chart_html}</div>'
+
+
+def _render_trade_timing(portfolio_trades: List[Dict[str, Any]]) -> str:
+    if not portfolio_trades:
+        return '<div id="sec-trade-timing" class="no-data">No trade data for timing analysis</div>'
+
+    DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    # 7 rows (days) x 24 cols (hours) count matrix
+    matrix: List[List[int]] = [[0] * 24 for _ in range(7)]
+    parsed = 0
+
+    for t in portfolio_trades:
+        entry_ts = t.get("entry_ts", "")
+        if not entry_ts:
+            continue
+        try:
+            dt = datetime.datetime.fromisoformat(str(entry_ts))
+            hour = dt.hour
+            weekday = dt.weekday()  # 0=Monday, 6=Sunday
+            matrix[weekday][hour] += 1
+            parsed += 1
+        except (ValueError, TypeError):
+            continue
+
+    if parsed == 0:
+        return '<div id="sec-trade-timing" class="no-data">No valid timestamps for timing analysis</div>'
+
+    z_json = json.dumps(matrix)
+    days_json = json.dumps(DAY_NAMES)
+    hours_json = json.dumps(list(range(24)))
+
+    # Build annotations for non-zero cells
+    annotations: List[str] = []
+    for day_idx in range(7):
+        for hour in range(24):
+            val = matrix[day_idx][hour]
+            if val > 0:
+                annotations.append(
+                    f"{{x: {hour}, y: {day_idx}, text: '{val}', showarrow: false, "
+                    f"font: {{color: '#222436', size: 9}}}}"
+                )
+    annotations_str = ",\n    ".join(annotations)
+
+    return f"""<div id="sec-trade-timing" class="chart-container">
+<h4 style="color:var(--accent-purple);margin-bottom:8px;">Trade Entry Timing (UTC)</h4>
+<div id="trade-timing-chart" style="width:100%;height:300px;"></div>
+<script>
+(function() {{
+  var z = {z_json};
+  var days = {days_json};
+  var hours = {hours_json};
+  var trace = {{
+    z: z,
+    x: hours,
+    y: days,
+    type: 'heatmap',
+    colorscale: 'Viridis',
+    showscale: true,
+    colorbar: {{
+      title: 'Trades',
+      titlefont: {{color: '#c8d3f5'}},
+      tickfont: {{color: '#c8d3f5'}}
+    }}
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    margin: {{l: 80, r: 60, t: 20, b: 40}},
+    xaxis: {{title: 'Hour (UTC)', gridcolor: '#3b4261', dtick: 4}},
+    yaxis: {{autorange: 'reversed', gridcolor: '#3b4261'}},
+    annotations: [
+    {annotations_str}
+    ]
+  }};
+  Plotly.newPlot('trade-timing-chart', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+
 def _render_trade_analysis(
     portfolio_trades: List[Dict[str, Any]],
     per_pair_trades: Dict[str, List[Dict[str, Any]]],
@@ -1937,39 +2350,7 @@ def _render_trade_analysis(
 
     sections: List[str] = []
 
-    # ── 1. Long/Short Breakdown ──
-    long_trades = [t for t in portfolio_trades if t.get("direction") == "long"]
-    short_trades = [t for t in portfolio_trades if t.get("direction") == "short"]
-
-    def _direction_card(label: str, trades: List[Dict[str, Any]]) -> str:
-        count = len(trades)
-        total_pnl = sum(t.get("pnl_abs", 0.0) for t in trades)
-        wins = sum(1 for t in trades if t.get("pnl_abs", 0.0) > 0)
-        win_rate = (wins / count * 100) if count > 0 else 0.0
-        pnl_color = "#c3e88d" if total_pnl >= 0 else "#ff757f"
-        return (
-            f'<div class="card">'
-            f'<div class="card-label">{label}</div>'
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">Trades</span>'
-            f'<span class="wf-metric-value">{count}</span></div>'
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">Total PnL</span>'
-            f'<span class="wf-metric-value" style="color:{pnl_color}">${total_pnl:,.2f}</span></div>'
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">Win Rate</span>'
-            f'<span class="wf-metric-value">{win_rate:.1f}%</span></div>'
-            f'</div>'
-        )
-
-    long_card = _direction_card("Long Trades", long_trades)
-    short_card = _direction_card("Short Trades", short_trades)
-    sections.append(
-        f'<div class="grid-2col" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px;">'
-        f'{long_card}{short_card}</div>'
-    )
-
-    # ── 2. Exit Reason Bar Chart ──
+    # ── 1. Exit Reason Bar Chart ──
     reason_counts: Dict[str, int] = {}
     for t in portfolio_trades:
         reason = t.get("reason", "unknown")

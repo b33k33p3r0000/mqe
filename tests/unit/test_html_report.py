@@ -25,6 +25,10 @@ from mqe.html_report import (
     _render_trade_analysis,
     _render_underwater_chart,
     _render_rolling_sharpe,
+    _render_long_short_analysis,
+    _render_top_drawdowns,
+    _render_streak_analysis,
+    _render_trade_timing,
 )
 
 
@@ -1152,12 +1156,6 @@ def trade_analysis_trades():
     ]
 
 
-def test_trade_analysis_long_short_cards(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    assert "Long Trades" in html
-    assert "Short Trades" in html
-
-
 def test_trade_analysis_exit_reasons_chart(trade_analysis_trades):
     html = _render_trade_analysis(trade_analysis_trades, {})
     assert 'id="exit-reasons-chart"' in html
@@ -1179,34 +1177,131 @@ def test_trade_analysis_empty_data():
     assert "no-data" in html
 
 
-def test_trade_analysis_grid_2col(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    assert "grid-2col" in html
-
-
-def test_trade_analysis_long_count(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    # 3 long trades
-    # Check that the long card contains "3"
-    long_idx = html.index("Long Trades")
-    short_idx = html.index("Short Trades")
-    long_section = html[long_idx:short_idx]
-    assert ">3<" in long_section
-
-
-def test_trade_analysis_short_count(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    # 2 short trades
-    short_idx = html.index("Short Trades")
-    short_section = html[short_idx:short_idx + 500]
-    assert ">2<" in short_section
-
-
 def test_trade_analysis_exit_reason_names(trade_analysis_trades):
     html = _render_trade_analysis(trade_analysis_trades, {})
     assert "trailing_stop" in html
     assert "hard_stop" in html
     assert "max_hold" in html
+
+
+# ─── Long/Short Analysis (Task 5) ───
+
+
+def test_long_short_analysis_empty_data():
+    html = _render_long_short_analysis([])
+    assert "no-data" in html
+
+
+def test_long_short_analysis_cards():
+    trades = [
+        {"direction": "long", "pnl_abs": 1000, "pnl_pct": 2.0, "hold_bars": 24},
+        {"direction": "long", "pnl_abs": -500, "pnl_pct": -1.0, "hold_bars": 12},
+        {"direction": "short", "pnl_abs": 800, "pnl_pct": 1.5, "hold_bars": 18},
+    ]
+    html = _render_long_short_analysis(trades)
+    assert "LONG" in html
+    assert "SHORT" in html
+    assert "stat-grid-2" in html
+
+
+def test_long_short_analysis_stacked_bar():
+    trades = [
+        {"direction": "long", "pnl_abs": 1000, "pnl_pct": 2.0, "hold_bars": 24},
+        {"direction": "short", "pnl_abs": 800, "pnl_pct": 1.5, "hold_bars": 18},
+    ]
+    html = _render_long_short_analysis(trades)
+    assert "Plotly.newPlot" in html
+    assert 'id="long-short-chart"' in html
+
+
+def test_long_short_analysis_no_short_trades():
+    trades = [{"direction": "long", "pnl_abs": 1000, "pnl_pct": 2.0, "hold_bars": 24}]
+    html = _render_long_short_analysis(trades)
+    assert "LONG" in html
+    assert "SHORT" in html
+
+
+# ─── Top Drawdowns (Task 6) ───
+
+
+def test_top_drawdowns_empty_data():
+    html = _render_top_drawdowns([], [])
+    assert html == ""
+
+
+def test_top_drawdowns_has_table():
+    equity = [100000, 105000, 100000, 108000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
+    html = _render_top_drawdowns(equity, ts)
+    assert "<table" in html
+    assert "Depth" in html
+    assert "Peak" in html
+    assert "Trough" in html
+    assert "Recovery" in html
+
+
+def test_top_drawdowns_limits_to_5():
+    equity = [100000]
+    for i in range(10):
+        equity.append(equity[-1] + 5000)
+        equity.append(equity[-1] - 3000)
+        equity.append(equity[-1] + 5000)
+    ts = [f"t{i}" for i in range(len(equity))]
+    html = _render_top_drawdowns(equity, ts)
+    assert html.count("<tr>") <= 6
+
+
+# ─── Streak Analysis (Task 7) ───
+
+
+def test_streak_analysis_empty_data():
+    html = _render_streak_analysis([], {})
+    assert "no-data" in html
+
+
+def test_streak_analysis_stat_cards():
+    trades = [
+        {"pnl_abs": 100}, {"pnl_abs": 200}, {"pnl_abs": -50},
+        {"pnl_abs": -30}, {"pnl_abs": -10}, {"pnl_abs": 80},
+    ]
+    metrics = {"max_win_streak": 2, "max_loss_streak": 3}
+    html = _render_streak_analysis(trades, metrics)
+    assert "stat-grid-4" in html
+    assert "Max Win" in html
+    assert "Max Loss" in html
+
+
+def test_streak_analysis_histogram():
+    trades = [{"pnl_abs": 100}, {"pnl_abs": 200}, {"pnl_abs": -50}]
+    html = _render_streak_analysis(trades, {})
+    assert "Plotly.newPlot" in html
+    assert 'id="streak-chart"' in html
+
+
+# ─── Trade Timing Heatmap (Task 8) ───
+
+
+def test_trade_timing_empty_data():
+    html = _render_trade_timing([])
+    assert "no-data" in html
+
+
+def test_trade_timing_has_heatmap():
+    trades = [
+        {"entry_ts": "2025-01-06T10:00:00"},
+        {"entry_ts": "2025-01-06T14:00:00"},
+        {"entry_ts": "2025-01-07T08:00:00"},
+    ]
+    html = _render_trade_timing(trades)
+    assert "Plotly.newPlot" in html
+    assert 'id="trade-timing-chart"' in html
+    assert "heatmap" in html
+
+
+def test_trade_timing_day_names():
+    trades = [{"entry_ts": "2025-01-06T10:00:00"}]
+    html = _render_trade_timing(trades)
+    assert "Monday" in html
 
 
 # ─── Save HTML Report (Task 27) ───
