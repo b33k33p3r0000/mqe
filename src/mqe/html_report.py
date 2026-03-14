@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Dict, List
 import datetime
 
@@ -570,6 +571,140 @@ def _render_portfolio_equity_curve(
     yaxis2: {{title: 'Drawdown (%)', overlaying: 'y', side: 'right', gridcolor: '#3b4261', showgrid: false}}
   }};
   Plotly.newPlot('portfolio-equity-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+
+def _render_underwater_chart(
+    portfolio_equity_curve: List[float],
+    timestamps: List[str],
+) -> str:
+    if not portfolio_equity_curve:
+        return ""
+
+    # Compute drawdown % from running HWM
+    drawdown: List[float] = []
+    running_max = float("-inf")
+    for val in portfolio_equity_curve:
+        running_max = max(running_max, val)
+        dd_pct = ((val - running_max) / running_max * 100) if running_max > 0 else 0.0
+        drawdown.append(dd_pct)
+
+    x_data = timestamps if timestamps else list(range(len(portfolio_equity_curve)))
+    x_json = json.dumps(x_data)
+    dd_json = json.dumps(drawdown)
+
+    return f"""<div class="chart-container" id="sec-underwater">
+<div id="underwater-chart" style="width:100%;height:250px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var dd = {dd_json};
+  var traces = [
+    {{
+      x: x, y: dd, type: 'scatter', mode: 'lines',
+      name: 'Drawdown %',
+      line: {{color: '#ff757f', width: 1.5}},
+      fill: 'tozeroy', fillcolor: 'rgba(255,117,127,0.3)'
+    }}
+  ];
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Underwater (Drawdown %)', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 40, t: 40, b: 40}},
+    showlegend: false,
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Drawdown (%)', gridcolor: '#3b4261', showgrid: true}}
+  }};
+  Plotly.newPlot('underwater-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+
+def _render_rolling_sharpe(
+    portfolio_equity_curve: List[float],
+    timestamps: List[str],
+) -> str:
+    WINDOW = 2160  # 90 days * 24 hours
+    if len(portfolio_equity_curve) < WINDOW + 1:
+        return ""
+
+    # Compute hourly returns
+    returns: List[float] = []
+    for i in range(1, len(portfolio_equity_curve)):
+        prev = portfolio_equity_curve[i - 1]
+        curr = portfolio_equity_curve[i]
+        ret = (curr - prev) / prev if prev != 0 else 0.0
+        returns.append(ret)
+
+    # Rolling Sharpe = mean/std * sqrt(365*24) over WINDOW
+    annualization = math.sqrt(365 * 24)
+    sharpe_vals: List[float] = []
+    sharpe_x: List[Any] = []
+    for i in range(WINDOW - 1, len(returns)):
+        window = returns[i - WINDOW + 1: i + 1]
+        n = len(window)
+        mean = sum(window) / n
+        variance = sum((r - mean) ** 2 for r in window) / n
+        std = math.sqrt(variance) if variance > 0 else 0.0
+        sharpe = (mean / std * annualization) if std > 0 else 0.0
+        sharpe_vals.append(sharpe)
+        # x corresponds to equity index WINDOW + i
+        idx = i + 1  # equity index
+        if timestamps and idx < len(timestamps):
+            sharpe_x.append(timestamps[idx])
+        else:
+            sharpe_x.append(idx)
+
+    x_json = json.dumps(sharpe_x)
+    sharpe_json = json.dumps(sharpe_vals)
+    n_points = len(sharpe_vals)
+
+    return f"""<div class="chart-container" id="sec-rolling-sharpe">
+<div id="rolling-sharpe-chart" style="width:100%;height:250px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var sharpe = {sharpe_json};
+  var n = {n_points};
+  var traces = [
+    {{
+      x: x, y: sharpe, type: 'scatter', mode: 'lines',
+      name: 'Rolling Sharpe (90d)',
+      line: {{color: '#86e1fc', width: 1.5}}
+    }}
+  ];
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Rolling Sharpe Ratio (90-day)', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 40, t: 40, b: 40}},
+    showlegend: false,
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Sharpe', gridcolor: '#3b4261', showgrid: true}},
+    shapes: [
+      {{
+        type: 'line', x0: x[0], x1: x[n-1], y0: 0, y1: 0,
+        line: {{color: '#ff757f', width: 1, dash: 'dash'}}
+      }},
+      {{
+        type: 'line', x0: x[0], x1: x[n-1], y0: 1, y1: 1,
+        line: {{color: '#ffffff', width: 1, dash: 'dash'}}
+      }},
+      {{
+        type: 'rect', x0: x[0], x1: x[n-1], y0: -100, y1: 0,
+        fillcolor: 'rgba(255,117,127,0.05)', line: {{width: 0}}
+      }},
+      {{
+        type: 'rect', x0: x[0], x1: x[n-1], y0: 1, y1: 100,
+        fillcolor: 'rgba(195,232,141,0.05)', line: {{width: 0}}
+      }}
+    ]
+  }};
+  Plotly.newPlot('rolling-sharpe-chart', traces, layout, {{responsive: true}});
 }})();
 </script>
 </div>"""

@@ -23,6 +23,8 @@ from mqe.html_report import (
     _render_correlation_heatmap,
     _render_monthly_returns,
     _render_trade_analysis,
+    _render_underwater_chart,
+    _render_rolling_sharpe,
 )
 
 
@@ -227,6 +229,62 @@ def test_portfolio_equity_curve_without_timestamps():
     equity = [100000, 102000, 101000]
     html = _render_portfolio_equity_curve(equity, [])
     assert "Plotly.newPlot" in html
+
+
+# ─── Underwater Chart Tests ───
+
+
+def test_underwater_chart_empty_data():
+    html = _render_underwater_chart([], [])
+    assert html == ""
+
+
+def test_underwater_chart_has_plotly():
+    equity = [100000, 102000, 101000, 105000, 103000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05"]
+    html = _render_underwater_chart(equity, ts)
+    assert "Plotly.newPlot" in html
+
+
+def test_underwater_chart_div_id():
+    equity = [100000, 102000, 101000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03"]
+    html = _render_underwater_chart(equity, ts)
+    assert 'id="underwater-chart"' in html
+
+
+def test_underwater_chart_negative_values():
+    equity = [100000, 102000, 101000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03"]
+    html = _render_underwater_chart(equity, ts)
+    assert "tozeroy" in html
+
+
+# ─── Rolling Sharpe Tests ───
+
+
+def test_rolling_sharpe_empty_data():
+    html = _render_rolling_sharpe([], [])
+    assert html == ""
+
+
+def test_rolling_sharpe_too_few_points():
+    equity = [100000 + i * 10 for i in range(100)]
+    ts = [f"2026-01-01T{i:02d}:00" for i in range(100)]
+    html = _render_rolling_sharpe(equity, ts)
+    assert html == ""
+
+
+def test_rolling_sharpe_has_plotly():
+    import random
+    random.seed(42)
+    equity = [100000.0]
+    for _ in range(2199):
+        equity.append(equity[-1] + random.gauss(5, 100))
+    ts = [f"t{i}" for i in range(2200)]
+    html = _render_rolling_sharpe(equity, ts)
+    assert "Plotly.newPlot" in html
+    assert 'id="rolling-sharpe-chart"' in html
 
 
 # ─── Concurrent Positions Tests ───
