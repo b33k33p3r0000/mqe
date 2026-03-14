@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Dict, List
 import datetime
 
@@ -38,7 +39,7 @@ body {
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
-    padding: 24px 40px;
+    padding: 0;
     max-width: 1920px;
     margin: 0 auto;
 }
@@ -48,10 +49,10 @@ h1, h2, h3 {
     font-family: var(--font-mono);
 }
 
-/* Hero grid — 3 columns */
+/* Hero grid — 5 columns */
 .hero-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px;
     margin-bottom: 32px;
 }
@@ -307,6 +308,111 @@ tr:hover td {
     color: var(--text-secondary);
     font-size: 11px;
 }
+
+/* Sidebar navigation */
+.report-layout {
+    display: flex;
+    gap: 0;
+}
+
+.sidebar {
+    position: sticky;
+    top: 0;
+    width: 200px;
+    min-width: 200px;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    font-size: 11px;
+    z-index: 100;
+}
+
+.sidebar a {
+    display: block;
+    padding: 4px 16px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+}
+
+.sidebar a:hover {
+    color: var(--text-primary);
+    background: rgba(134, 225, 252, 0.05);
+}
+
+.sidebar a.active {
+    color: var(--accent-cyan);
+    border-left: 2px solid var(--accent-cyan);
+    background: rgba(134, 225, 252, 0.08);
+}
+
+.sidebar .nav-section {
+    font-weight: 700;
+    color: var(--text-primary);
+    padding: 12px 16px 4px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.report-content {
+    flex: 1;
+    min-width: 0;
+    width: calc(100% - 200px);
+    padding: 24px 40px;
+    max-width: 1920px;
+    overflow-x: hidden;
+}
+
+@media (max-width: 900px) {
+    .sidebar { display: none; }
+    .report-content { padding: 16px; }
+}
+
+/* Stat cards for new sections */
+.stat-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.stat-card .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.stat-card .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+/* Sortable table headers */
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+th.sortable:hover {
+    color: var(--accent-cyan);
+}
 """
 
 
@@ -323,7 +429,11 @@ def _render_hero_metrics(
     calmar = metrics.get("calmar_ratio", 0.0)
     sharpe = metrics.get("sharpe_ratio_equity_based", 0.0)
     max_dd = summary.get("max_drawdown", 0.0)
-    total_trades = summary.get("total_trades", 0)
+    total_trades = summary.get("total_trades", summary.get("trades", metrics.get("trades", 0)))
+    sortino = metrics.get("sortino_ratio", 0.0)
+    recovery = metrics.get("recovery_factor", 0.0)
+    profit_factor = metrics.get("profit_factor", 0.0)
+    win_rate = metrics.get("win_rate", 0.0)
 
     # Format values
     equity_str = f"${equity:,.2f}"
@@ -343,13 +453,49 @@ def _render_hero_metrics(
     else:
         dd_class = ""
 
+    # Sortino: green>2, yellow>1, red<1
+    if sortino > 2:
+        sortino_class = "positive"
+    elif sortino > 1:
+        sortino_class = "warning"
+    else:
+        sortino_class = "negative"
+
+    # Calmar: green>3, yellow>1, red<1
+    if calmar > 3:
+        calmar_class = "positive"
+    elif calmar > 1:
+        calmar_class = "warning"
+    else:
+        calmar_class = "negative"
+
+    # Recovery Factor: green>5, yellow>2, red<1
+    if recovery > 5:
+        recovery_class = "positive"
+    elif recovery > 2:
+        recovery_class = "warning"
+    else:
+        recovery_class = "negative"
+
+    # Profit Factor: green>1.5, yellow>1, red<1
+    if profit_factor > 1.5:
+        pf_class = "positive"
+    elif profit_factor > 1:
+        pf_class = "warning"
+    else:
+        pf_class = "negative"
+
     cards = [
         ("Final Equity", equity_str, ""),
         ("Total PnL", pnl_str, pnl_class),
-        ("Calmar Ratio", calmar_str, ""),
+        ("Calmar Ratio", calmar_str, calmar_class),
         ("Sharpe (equity)", sharpe_str, ""),
         ("Max Drawdown", dd_str, dd_class),
         ("Total Trades", trades_str, ""),
+        ("Sortino", f"{sortino:.2f}", sortino_class),
+        ("Recovery Factor", f"{recovery:.2f}", recovery_class),
+        ("Profit Factor", f"{profit_factor:.2f}", pf_class),
+        ("Win Rate", f"{win_rate:.1f}%", ""),
     ]
 
     html_cards = []
@@ -427,6 +573,140 @@ def _render_portfolio_equity_curve(
     yaxis2: {{title: 'Drawdown (%)', overlaying: 'y', side: 'right', gridcolor: '#3b4261', showgrid: false}}
   }};
   Plotly.newPlot('portfolio-equity-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+
+def _render_underwater_chart(
+    portfolio_equity_curve: List[float],
+    timestamps: List[str],
+) -> str:
+    if not portfolio_equity_curve:
+        return ""
+
+    # Compute drawdown % from running HWM
+    drawdown: List[float] = []
+    running_max = float("-inf")
+    for val in portfolio_equity_curve:
+        running_max = max(running_max, val)
+        dd_pct = ((val - running_max) / running_max * 100) if running_max > 0 else 0.0
+        drawdown.append(dd_pct)
+
+    x_data = timestamps if timestamps else list(range(len(portfolio_equity_curve)))
+    x_json = json.dumps(x_data)
+    dd_json = json.dumps(drawdown)
+
+    return f"""<div class="chart-container" id="sec-underwater">
+<div id="underwater-chart" style="width:100%;height:250px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var dd = {dd_json};
+  var traces = [
+    {{
+      x: x, y: dd, type: 'scatter', mode: 'lines',
+      name: 'Drawdown %',
+      line: {{color: '#ff757f', width: 1.5}},
+      fill: 'tozeroy', fillcolor: 'rgba(255,117,127,0.3)'
+    }}
+  ];
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Underwater (Drawdown %)', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 40, t: 40, b: 40}},
+    showlegend: false,
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Drawdown (%)', gridcolor: '#3b4261', showgrid: true}}
+  }};
+  Plotly.newPlot('underwater-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+
+def _render_rolling_sharpe(
+    portfolio_equity_curve: List[float],
+    timestamps: List[str],
+) -> str:
+    WINDOW = 2160  # 90 days * 24 hours
+    if len(portfolio_equity_curve) < WINDOW + 1:
+        return ""
+
+    # Compute hourly returns
+    returns: List[float] = []
+    for i in range(1, len(portfolio_equity_curve)):
+        prev = portfolio_equity_curve[i - 1]
+        curr = portfolio_equity_curve[i]
+        ret = (curr - prev) / prev if prev != 0 else 0.0
+        returns.append(ret)
+
+    # Rolling Sharpe = mean/std * sqrt(365*24) over WINDOW
+    annualization = math.sqrt(365 * 24)
+    sharpe_vals: List[float] = []
+    sharpe_x: List[Any] = []
+    for i in range(WINDOW - 1, len(returns)):
+        window = returns[i - WINDOW + 1: i + 1]
+        n = len(window)
+        mean = sum(window) / n
+        variance = sum((r - mean) ** 2 for r in window) / n
+        std = math.sqrt(variance) if variance > 0 else 0.0
+        sharpe = (mean / std * annualization) if std > 0 else 0.0
+        sharpe_vals.append(sharpe)
+        # x corresponds to equity index WINDOW + i
+        idx = i + 1  # equity index
+        if timestamps and idx < len(timestamps):
+            sharpe_x.append(timestamps[idx])
+        else:
+            sharpe_x.append(idx)
+
+    x_json = json.dumps(sharpe_x)
+    sharpe_json = json.dumps(sharpe_vals)
+    n_points = len(sharpe_vals)
+
+    return f"""<div class="chart-container" id="sec-rolling-sharpe">
+<div id="rolling-sharpe-chart" style="width:100%;height:250px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var sharpe = {sharpe_json};
+  var n = {n_points};
+  var traces = [
+    {{
+      x: x, y: sharpe, type: 'scatter', mode: 'lines',
+      name: 'Rolling Sharpe (90d)',
+      line: {{color: '#86e1fc', width: 1.5}}
+    }}
+  ];
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Rolling Sharpe Ratio (90-day)', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 60, r: 40, t: 40, b: 40}},
+    showlegend: false,
+    xaxis: {{gridcolor: '#3b4261', showgrid: true}},
+    yaxis: {{title: 'Sharpe', gridcolor: '#3b4261', showgrid: true}},
+    shapes: [
+      {{
+        type: 'line', x0: x[0], x1: x[n-1], y0: 0, y1: 0,
+        line: {{color: '#ff757f', width: 1, dash: 'dash'}}
+      }},
+      {{
+        type: 'line', x0: x[0], x1: x[n-1], y0: 1, y1: 1,
+        line: {{color: '#ffffff', width: 1, dash: 'dash'}}
+      }},
+      {{
+        type: 'rect', x0: x[0], x1: x[n-1], y0: -100, y1: 0,
+        fillcolor: 'rgba(255,117,127,0.05)', line: {{width: 0}}
+      }},
+      {{
+        type: 'rect', x0: x[0], x1: x[n-1], y0: 1, y1: 100,
+        fillcolor: 'rgba(195,232,141,0.05)', line: {{width: 0}}
+      }}
+    ]
+  }};
+  Plotly.newPlot('rolling-sharpe-chart', traces, layout, {{responsive: true}});
 }})();
 </script>
 </div>"""
@@ -582,17 +862,25 @@ def _render_per_pair_table(
         per_pair = {s: m for s, m in per_pair.items() if s not in excluded_symbols}
 
     tiers = pipeline_result.get("tier_assignments", {})
-    # Build verdict lookup from analysis
+    # Build verdict lookup from analysis (explicit param or fallback to pipeline_result["analysis"])
     verdict_map: Dict[str, str] = {}
-    if analysis:
-        verdict_list = analysis.get("per_pair", [])
+    effective_analysis = analysis or pipeline_result.get("analysis")
+    if effective_analysis:
+        verdict_list = effective_analysis.get("per_pair", [])
         if isinstance(verdict_list, list):
             for entry in verdict_list:
                 if isinstance(entry, dict):
                     verdict_map[entry.get("symbol", "")] = entry.get("verdict", "—")
 
     headers = ["Symbol", "Tier", "Verdict", "Trades/yr", "Sharpe", "Calmar", "Max DD%", "PnL%", "Win Rate", "PF"]
-    header_row = "".join(f"<th>{h}</th>" for h in headers)
+    col_types = [False, False, False, True, True, True, True, True, True, True]  # numeric flags
+    header_cells = []
+    for idx, (h, is_num) in enumerate(zip(headers, col_types)):
+        num_str = "true" if is_num else "false"
+        header_cells.append(
+            f'<th class="sortable" onclick="sortTable(\'per-pair-table\',{idx},{num_str})">{h}</th>'
+        )
+    header_row = "".join(header_cells)
 
     rows = []
     for symbol in sorted(per_pair.keys()):
@@ -636,7 +924,34 @@ def _render_per_pair_table(
         )
         rows.append(row)
 
-    return f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+    sort_js = """<script>
+function sortTable(tableId, col, numeric) {
+  var table = document.getElementById(tableId);
+  var tbody = table.querySelector('tbody');
+  var rows = Array.from(tbody.querySelectorAll('tr'));
+  var asc = table.dataset.sortCol == col && table.dataset.sortDir == 'asc' ? false : true;
+  rows.sort(function(a, b) {
+    var av = a.cells[col].textContent.replace(/[%$,+]/g, '');
+    var bv = b.cells[col].textContent.replace(/[%$,+]/g, '');
+    if (numeric) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; }
+    return asc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+  rows.forEach(function(r) { tbody.appendChild(r); });
+  table.dataset.sortCol = col;
+  table.dataset.sortDir = asc ? 'asc' : 'desc';
+  var ths = table.querySelectorAll('th');
+  for (var i = 0; i < ths.length; i++) {
+    ths[i].textContent = ths[i].textContent.replace(/ [▲▼]/, '');
+    if (i == col) ths[i].textContent += asc ? ' ▲' : ' ▼';
+  }
+}
+</script>"""
+
+    return (
+        f'{sort_js}'
+        f'<table id="per-pair-table"><thead><tr>{header_row}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table>'
+    )
 
 
 def _render_per_pair_equity_curves(
@@ -1094,6 +1409,7 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
         parcoords_div = f"s1-parcoords-{safe_id}"
 
         parcoords_html = f"""<div class="chart-container">
+<h4 style="color:#c099ff;font-size:13px;text-align:center;margin:8px 0 4px 0;font-family:'JetBrains Mono',monospace;">{sym} — Parallel Coordinates</h4>
 <div id="{parcoords_div}" style="width:100%;height:400px;"></div>
 <script>
 (function() {{
@@ -1101,8 +1417,7 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
   var layout = {{
     paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
     font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 10}},
-    title: {{text: '{sym} — Parallel Coordinates', font: {{size: 13, color: '#c099ff'}}}},
-    margin: {{l: 60, r: 60, t: 40, b: 30}}
+    margin: {{l: 60, r: 60, t: 50, b: 30}}
   }};
   Plotly.newPlot('{parcoords_div}', traces, layout, {{responsive: true}});
 }})();
@@ -1260,7 +1575,8 @@ def _render_s2_params(pareto_front: Dict[str, Any]) -> str:
     if not portfolio_params:
         return '<div class="no-data">No S2 portfolio parameters available</div>'
 
-    rows_html = []
+    # Render as horizontal stat cards (4 params side by side)
+    cards_html = []
     for param_name, (lo, hi) in S2_RANGES.items():
         val = portfolio_params.get(param_name)
         if val is None:
@@ -1269,17 +1585,18 @@ def _render_s2_params(pareto_front: Dict[str, Any]) -> str:
             val_str = f"{val:.4g}"
         else:
             val_str = str(val)
-        rows_html.append(
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">{param_name}</span>'
-            f'<span class="wf-metric-value">{val_str} <span style="color:var(--text-muted);font-size:10px;">[{lo} — {hi}]</span></span>'
+        cards_html.append(
+            f'<div class="stat-card">'
+            f'<div class="stat-label">{param_name}</div>'
+            f'<div class="stat-value">{val_str}</div>'
+            f'<div style="color:var(--text-muted);font-size:10px;margin-top:4px;">range: {lo} — {hi}</div>'
             f'</div>'
         )
 
     return (
-        f'<div class="card" style="max-width:500px;margin-bottom:24px;">'
+        f'<div style="margin-bottom:24px;">'
         f'<h3 style="color:#c099ff;margin-bottom:12px;">S2 Portfolio Parameters</h3>'
-        f'{"".join(rows_html)}'
+        f'<div class="stat-grid-4">{"".join(cards_html)}</div>'
         f'</div>'
     )
 
@@ -1650,6 +1967,531 @@ def _render_monthly_returns(
 </div>"""
 
 
+def _render_per_pair_monthly_heatmaps(
+    per_pair_trades: Dict[str, List[Dict[str, Any]]],
+    excluded_symbols: set,
+) -> str:
+    """Render per-pair monthly PnL heatmaps using Plotly (one chart per symbol)."""
+    if not per_pair_trades:
+        return '<div id="sec-per-pair-monthly" class="no-data">No per-pair trade data for monthly heatmaps</div>'
+
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    charts: List[str] = []
+    for symbol in sorted(per_pair_trades.keys()):
+        if symbol in excluded_symbols:
+            continue
+
+        trades = per_pair_trades[symbol]
+        if not trades:
+            continue
+
+        # Group trades by YYYY-MM, sum pnl_abs
+        monthly_pnl: Dict[str, float] = {}
+        for trade in trades:
+            exit_ts = trade.get("exit_ts", "")
+            if not exit_ts:
+                continue
+            try:
+                year_month = str(exit_ts)[:7]
+                if len(year_month) == 7 and year_month[4] == "-":
+                    pnl = float(trade.get("pnl_abs", 0.0))
+                    monthly_pnl[year_month] = monthly_pnl.get(year_month, 0.0) + pnl
+            except (ValueError, IndexError):
+                continue
+
+        if not monthly_pnl:
+            continue
+
+        # Build year x month matrix (rows = years ascending, cols = Jan-Dec)
+        years = sorted(set(ym[:4] for ym in monthly_pnl.keys()))
+        # z[year_idx][month_idx] = pnl or None
+        z_matrix: List[List[Any]] = []
+        text_matrix: List[List[str]] = []
+        for year in years:
+            z_row: List[Any] = []
+            text_row: List[str] = []
+            for m_idx in range(1, 13):
+                key = f"{year}-{m_idx:02d}"
+                pnl = monthly_pnl.get(key, None)
+                if pnl is not None:
+                    z_row.append(pnl)
+                    sign = "+" if pnl >= 0 else ""
+                    text_row.append(f"${sign}{pnl:,.0f}")
+                else:
+                    z_row.append(None)
+                    text_row.append("")
+            z_matrix.append(z_row)
+            text_matrix.append(text_row)
+
+        safe_id = symbol.replace("/", "_").replace(" ", "_")
+        div_id = f"monthly-heatmap-{safe_id}"
+        height = max(120, len(years) * 60 + 60)
+
+        z_json = json.dumps(z_matrix)
+        text_json = json.dumps(text_matrix)
+        years_json = json.dumps(years)
+        months_json = json.dumps(month_names)
+
+        chart_html = f"""<div class="chart-container">
+<h4 style="color:var(--accent-purple);font-size:13px;margin-bottom:8px;">{symbol} — Monthly Returns</h4>
+<div id="{div_id}" style="width:100%;height:{height}px;"></div>
+<script>
+(function() {{
+  var z = {z_json};
+  var text = {text_json};
+  var years = {years_json};
+  var months = {months_json};
+  var trace = {{
+    z: z,
+    x: months,
+    y: years,
+    text: text,
+    texttemplate: '%{{text}}',
+    type: 'heatmap',
+    colorscale: 'RdYlGn',
+    zmid: 0,
+    showscale: true,
+    colorbar: {{
+      title: 'PnL ($)',
+      titlefont: {{color: '#c8d3f5'}},
+      tickfont: {{color: '#c8d3f5'}}
+    }}
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d',
+    plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: "'JetBrains Mono', monospace", size: 11}},
+    margin: {{l: 60, r: 60, t: 20, b: 40}},
+    xaxis: {{tickangle: 0}},
+    yaxis: {{autorange: 'reversed', dtick: 1}}
+  }};
+  Plotly.newPlot('{div_id}', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+        charts.append(chart_html)
+
+    if not charts:
+        return '<div id="sec-per-pair-monthly" class="no-data">No per-pair trade data for monthly heatmaps</div>'
+
+    return f'<div id="sec-per-pair-monthly">{"".join(charts)}</div>'
+
+
+def _render_long_short_analysis(portfolio_trades: List[Dict[str, Any]]) -> str:
+    if not portfolio_trades:
+        return '<div id="sec-long-short" class="no-data">No trade data for long/short analysis</div>'
+
+    long_trades = [t for t in portfolio_trades if t.get("direction") == "long"]
+    short_trades = [t for t in portfolio_trades if t.get("direction") == "short"]
+
+    def _dir_stats(trades: List[Dict[str, Any]]) -> Dict[str, Any]:
+        count = len(trades)
+        wins = sum(1 for t in trades if t.get("pnl_abs", 0.0) > 0)
+        win_rate = (wins / count * 100) if count > 0 else 0.0
+        avg_pnl_pct = (sum(t.get("pnl_pct", 0.0) for t in trades) / count) if count > 0 else 0.0
+        total_pnl = sum(t.get("pnl_abs", 0.0) for t in trades)
+        avg_hold = (sum(t.get("hold_bars", 0) for t in trades) / count) if count > 0 else 0.0
+        return {
+            "count": count,
+            "win_rate": win_rate,
+            "avg_pnl_pct": avg_pnl_pct,
+            "total_pnl": total_pnl,
+            "avg_hold": avg_hold,
+        }
+
+    ls = _dir_stats(long_trades)
+    ss = _dir_stats(short_trades)
+
+    def _stat_card(label: str, stats: Dict[str, Any], border_color: str) -> str:
+        pnl_color = "#c3e88d" if stats["total_pnl"] >= 0 else "#ff757f"
+        avg_color = "#c3e88d" if stats["avg_pnl_pct"] >= 0 else "#ff757f"
+        return (
+            f'<div class="stat-card" style="border-top:3px solid {border_color};">'
+            f'<div class="stat-label" style="font-size:13px;font-weight:700;color:{border_color};margin-bottom:10px;">{label}</div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Trades</span>'
+            f'<span class="wf-metric-value">{stats["count"]}</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Win Rate</span>'
+            f'<span class="wf-metric-value">{stats["win_rate"]:.1f}%</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Avg PnL</span>'
+            f'<span class="wf-metric-value" style="color:{avg_color}">{stats["avg_pnl_pct"]:+.2f}%</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Total PnL</span>'
+            f'<span class="wf-metric-value" style="color:{pnl_color}">${stats["total_pnl"]:,.0f}</span></div>'
+            f'<div class="wf-metric-row"><span class="wf-metric-label">Avg Hold</span>'
+            f'<span class="wf-metric-value">{stats["avg_hold"]:.1f} bars</span></div>'
+            f'</div>'
+        )
+
+    long_card = _stat_card("LONG", ls, "#c3e88d")
+    short_card = _stat_card("SHORT", ss, "#ff757f")
+    cards_html = f'<div class="stat-grid-2">{long_card}{short_card}</div>'
+
+    # Stacked bar chart
+    total_trades = ls["count"] + ss["count"]
+    long_trade_ratio = ls["count"] / total_trades if total_trades > 0 else 0.5
+    short_trade_ratio = ss["count"] / total_trades if total_trades > 0 else 0.5
+
+    total_pnl_abs = abs(ls["total_pnl"]) + abs(ss["total_pnl"])
+    long_pnl_ratio = abs(ls["total_pnl"]) / total_pnl_abs if total_pnl_abs > 0 else 0.5
+    short_pnl_ratio = abs(ss["total_pnl"]) / total_pnl_abs if total_pnl_abs > 0 else 0.5
+
+    chart_html = f"""<div class="chart-container" style="padding:12px;">
+<div id="long-short-chart" style="width:100%;height:120px;"></div>
+<script>
+(function() {{
+  var traces = [
+    {{
+      x: [{long_trade_ratio:.4f}, {long_pnl_ratio:.4f}],
+      y: ['Trades', 'PnL Contribution'],
+      type: 'bar', orientation: 'h',
+      name: 'Long', marker: {{color: '#c3e88d'}},
+      text: ['{ls["count"]}', '${ls["total_pnl"]:,.0f}'],
+      textposition: 'inside', insidetextanchor: 'middle',
+      textfont: {{color: '#222436', size: 11}}
+    }},
+    {{
+      x: [{short_trade_ratio:.4f}, {short_pnl_ratio:.4f}],
+      y: ['Trades', 'PnL Contribution'],
+      type: 'bar', orientation: 'h',
+      name: 'Short', marker: {{color: '#ff757f'}},
+      text: ['{ss["count"]}', '${ss["total_pnl"]:,.0f}'],
+      textposition: 'inside', insidetextanchor: 'middle',
+      textfont: {{color: '#222436', size: 11}}
+    }}
+  ];
+  var layout = {{
+    barmode: 'stack',
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    margin: {{l: 120, r: 20, t: 10, b: 20}},
+    showlegend: true,
+    legend: {{orientation: 'h', x: 0.5, xanchor: 'center', y: 1.2, font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{range: [0, 1], showgrid: false, showticklabels: false}},
+    yaxis: {{gridcolor: '#3b4261'}}
+  }};
+  Plotly.newPlot('long-short-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+    return f'<div id="sec-long-short">{cards_html}{chart_html}</div>'
+
+
+def _render_top_drawdowns(
+    portfolio_equity_curve: List[float],
+    timestamps: List[str],
+) -> str:
+    if len(portfolio_equity_curve) < 3:
+        return ""
+
+    # Find all drawdown episodes (non-overlapping peak->trough->recovery)
+    episodes: List[Dict[str, Any]] = []
+    n = len(portfolio_equity_curve)
+    i = 0
+
+    while i < n:
+        # Find local peak: move forward while equity is rising or flat
+        peak_idx = i
+        peak_val = portfolio_equity_curve[i]
+
+        # Advance to find where a drawdown starts
+        j = i + 1
+        while j < n and portfolio_equity_curve[j] >= peak_val:
+            if portfolio_equity_curve[j] > peak_val:
+                peak_idx = j
+                peak_val = portfolio_equity_curve[j]
+            j += 1
+
+        if j >= n:
+            break  # No drawdown from this peak
+
+        # We're now in a drawdown — find trough
+        trough_idx = j
+        trough_val = portfolio_equity_curve[j]
+        k = j + 1
+        while k < n and portfolio_equity_curve[k] <= peak_val:
+            if portfolio_equity_curve[k] < trough_val:
+                trough_idx = k
+                trough_val = portfolio_equity_curve[k]
+            k += 1
+
+        depth_pct = (trough_val - peak_val) / peak_val * 100  # negative
+
+        # Find recovery (first point >= peak after trough)
+        recovery_idx = None
+        m = trough_idx + 1
+        while m < n:
+            if portfolio_equity_curve[m] >= peak_val:
+                recovery_idx = m
+                break
+            m += 1
+
+        episodes.append({
+            "depth_pct": depth_pct,
+            "peak_idx": peak_idx,
+            "trough_idx": trough_idx,
+            "recovery_idx": recovery_idx,
+            "duration_bars": trough_idx - peak_idx,
+            "recovery_bars": (recovery_idx - trough_idx) if recovery_idx is not None else None,
+        })
+
+        # Move past the recovery (or past trough if no recovery)
+        i = recovery_idx if recovery_idx is not None else trough_idx + 1
+
+    if not episodes:
+        return ""
+
+    # Sort by depth (most negative first = deepest), take top 5
+    top5 = sorted(episodes, key=lambda e: e["depth_pct"])[:5]
+
+    def _ts(idx: int) -> str:
+        if timestamps and idx < len(timestamps):
+            return str(timestamps[idx])[:10]
+        return f"bar {idx}"
+
+    def _depth_color(depth_pct: float) -> str:
+        """Scale red intensity with severity."""
+        severity = min(abs(depth_pct) / 30.0, 1.0)  # 30% = full red
+        r = int(255)
+        g = int(117 + (1 - severity) * 100)
+        b = int(127 + (1 - severity) * 100)
+        return f"rgb({r},{g},{b})"
+
+    rows = []
+    for rank, ep in enumerate(top5, 1):
+        depth_color = _depth_color(ep["depth_pct"])
+        peak_ts = _ts(ep["peak_idx"])
+        trough_ts = _ts(ep["trough_idx"])
+        if ep["recovery_idx"] is not None:
+            recovery_ts = _ts(ep["recovery_idx"])
+            recovery_bars_str = str(ep["recovery_bars"])
+            recovery_cell = f'<td>{recovery_ts}</td>'
+        else:
+            recovery_cell = '<td style="color:#ffc777;">ongoing</td>'
+            recovery_bars_str = '<span style="color:#ffc777;">—</span>'
+
+        rows.append(
+            f"<tr>"
+            f"<td>{rank}</td>"
+            f'<td style="color:{depth_color};font-weight:600;">{ep["depth_pct"]:.2f}%</td>'
+            f"<td>{peak_ts}</td>"
+            f"<td>{trough_ts}</td>"
+            f"{recovery_cell}"
+            f"<td>{ep['duration_bars']}</td>"
+            f"<td>{recovery_bars_str}</td>"
+            f"</tr>"
+        )
+
+    headers = ["#", "Depth", "Peak", "Trough", "Recovery", "Duration (bars)", "Recovery (bars)"]
+    header_row = "".join(f"<th>{h}</th>" for h in headers)
+
+    return (
+        f'<div id="sec-top-drawdowns" class="chart-container">'
+        f'<h4 style="color:var(--accent-purple);margin-bottom:12px;">Top 5 Drawdown Episodes</h4>'
+        f'<table><thead><tr>{header_row}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        f'</div>'
+    )
+
+
+def _render_streak_analysis(
+    portfolio_trades: List[Dict[str, Any]],
+    portfolio_metrics: Dict[str, Any],
+) -> str:
+    if not portfolio_trades:
+        return '<div id="sec-streaks" class="no-data">No trade data for streak analysis</div>'
+
+    # Build streak sequences from trades
+    win_streaks: List[int] = []
+    loss_streaks: List[int] = []
+    current_win = 0
+    current_loss = 0
+
+    for t in portfolio_trades:
+        pnl = t.get("pnl_abs", 0.0)
+        if pnl > 0:
+            if current_loss > 0:
+                loss_streaks.append(current_loss)
+                current_loss = 0
+            current_win += 1
+        elif pnl < 0:
+            if current_win > 0:
+                win_streaks.append(current_win)
+                current_win = 0
+            current_loss += 1
+        else:
+            # Breakeven: close any open streak
+            if current_win > 0:
+                win_streaks.append(current_win)
+                current_win = 0
+            if current_loss > 0:
+                loss_streaks.append(current_loss)
+                current_loss = 0
+
+    if current_win > 0:
+        win_streaks.append(current_win)
+    if current_loss > 0:
+        loss_streaks.append(current_loss)
+
+    # Stats — use portfolio_metrics if provided, otherwise compute from streak lists
+    max_win = portfolio_metrics.get("max_win_streak", max(win_streaks) if win_streaks else 0)
+    max_loss = portfolio_metrics.get("max_loss_streak", max(loss_streaks) if loss_streaks else 0)
+    avg_win = (sum(win_streaks) / len(win_streaks)) if win_streaks else 0.0
+    avg_loss = (sum(loss_streaks) / len(loss_streaks)) if loss_streaks else 0.0
+
+    cards_html = (
+        f'<div class="stat-grid-4">'
+        f'<div class="stat-card" style="border-top:3px solid #c3e88d;">'
+        f'<div class="stat-label">Max Win Streak</div>'
+        f'<div class="stat-value" style="color:#c3e88d;">{max_win}</div>'
+        f'</div>'
+        f'<div class="stat-card" style="border-top:3px solid #ff757f;">'
+        f'<div class="stat-label">Max Loss Streak</div>'
+        f'<div class="stat-value" style="color:#ff757f;">{max_loss}</div>'
+        f'</div>'
+        f'<div class="stat-card" style="border-top:3px solid #c3e88d;">'
+        f'<div class="stat-label">Avg Win Streak</div>'
+        f'<div class="stat-value" style="color:#c3e88d;">{avg_win:.1f}</div>'
+        f'</div>'
+        f'<div class="stat-card" style="border-top:3px solid #ff757f;">'
+        f'<div class="stat-label">Avg Loss Streak</div>'
+        f'<div class="stat-value" style="color:#ff757f;">{avg_loss:.1f}</div>'
+        f'</div>'
+        f'</div>'
+    )
+
+    # Build frequency distributions
+    win_max_len = max(win_streaks) if win_streaks else 0
+    loss_max_len = max(loss_streaks) if loss_streaks else 0
+    max_len = max(win_max_len, loss_max_len, 1)
+
+    win_freq: List[int] = [0] * (max_len + 1)
+    loss_freq: List[int] = [0] * (max_len + 1)
+    for s in win_streaks:
+        win_freq[s] += 1
+    for s in loss_streaks:
+        loss_freq[s] += 1
+
+    x_vals = list(range(1, max_len + 1))
+    win_y = win_freq[1:]
+    loss_y = loss_freq[1:]
+
+    x_json = json.dumps(x_vals)
+    win_json = json.dumps(win_y)
+    loss_json = json.dumps(loss_y)
+
+    chart_html = f"""<div class="chart-container">
+<div id="streak-chart" style="width:100%;height:250px;"></div>
+<script>
+(function() {{
+  var x = {x_json};
+  var traces = [
+    {{
+      x: x, y: {win_json}, type: 'bar', name: 'Win Streaks',
+      marker: {{color: '#c3e88d', opacity: 0.85}}
+    }},
+    {{
+      x: x, y: {loss_json}, type: 'bar', name: 'Loss Streaks',
+      marker: {{color: '#ff757f', opacity: 0.85}}
+    }}
+  ];
+  var layout = {{
+    barmode: 'group',
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    title: {{text: 'Win/Loss Streak Distribution', font: {{size: 14, color: '#c099ff'}}}},
+    margin: {{l: 50, r: 30, t: 40, b: 40}},
+    showlegend: true,
+    legend: {{font: {{size: 10}}, bgcolor: 'rgba(0,0,0,0)'}},
+    xaxis: {{title: 'Streak Length', gridcolor: '#3b4261', dtick: 1}},
+    yaxis: {{title: 'Frequency', gridcolor: '#3b4261'}}
+  }};
+  Plotly.newPlot('streak-chart', traces, layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+    return f'<div id="sec-streaks">{cards_html}{chart_html}</div>'
+
+
+def _render_trade_timing(portfolio_trades: List[Dict[str, Any]]) -> str:
+    if not portfolio_trades:
+        return '<div id="sec-trade-timing" class="no-data">No trade data for timing analysis</div>'
+
+    DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    # 7 rows (days) x 24 cols (hours) count matrix
+    matrix: List[List[int]] = [[0] * 24 for _ in range(7)]
+    parsed = 0
+
+    for t in portfolio_trades:
+        entry_ts = t.get("entry_ts", "")
+        if not entry_ts:
+            continue
+        try:
+            dt = datetime.datetime.fromisoformat(str(entry_ts))
+            hour = dt.hour
+            weekday = dt.weekday()  # 0=Monday, 6=Sunday
+            matrix[weekday][hour] += 1
+            parsed += 1
+        except (ValueError, TypeError):
+            continue
+
+    if parsed == 0:
+        return '<div id="sec-trade-timing" class="no-data">No valid timestamps for timing analysis</div>'
+
+    z_json = json.dumps(matrix)
+    days_json = json.dumps(DAY_NAMES)
+    hours_json = json.dumps(list(range(24)))
+
+    # Build annotations for non-zero cells
+    annotations: List[str] = []
+    for day_idx in range(7):
+        for hour in range(24):
+            val = matrix[day_idx][hour]
+            if val > 0:
+                annotations.append(
+                    f"{{x: {hour}, y: {day_idx}, text: '{val}', showarrow: false, "
+                    f"font: {{color: '#222436', size: 9}}}}"
+                )
+    annotations_str = ",\n    ".join(annotations)
+
+    return f"""<div id="sec-trade-timing" class="chart-container">
+<h4 style="color:var(--accent-purple);margin-bottom:8px;">Trade Entry Timing (UTC)</h4>
+<div id="trade-timing-chart" style="width:100%;height:300px;"></div>
+<script>
+(function() {{
+  var z = {z_json};
+  var days = {days_json};
+  var hours = {hours_json};
+  var trace = {{
+    z: z,
+    x: hours,
+    y: days,
+    type: 'heatmap',
+    colorscale: 'Viridis',
+    showscale: true,
+    colorbar: {{
+      title: 'Trades',
+      titlefont: {{color: '#c8d3f5'}},
+      tickfont: {{color: '#c8d3f5'}}
+    }}
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
+    font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 11}},
+    margin: {{l: 80, r: 60, t: 20, b: 40}},
+    xaxis: {{title: 'Hour (UTC)', gridcolor: '#3b4261', dtick: 4}},
+    yaxis: {{autorange: 'reversed', gridcolor: '#3b4261'}},
+    annotations: [
+    {annotations_str}
+    ]
+  }};
+  Plotly.newPlot('trade-timing-chart', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+
+
 def _render_trade_analysis(
     portfolio_trades: List[Dict[str, Any]],
     per_pair_trades: Dict[str, List[Dict[str, Any]]],
@@ -1659,39 +2501,7 @@ def _render_trade_analysis(
 
     sections: List[str] = []
 
-    # ── 1. Long/Short Breakdown ──
-    long_trades = [t for t in portfolio_trades if t.get("direction") == "long"]
-    short_trades = [t for t in portfolio_trades if t.get("direction") == "short"]
-
-    def _direction_card(label: str, trades: List[Dict[str, Any]]) -> str:
-        count = len(trades)
-        total_pnl = sum(t.get("pnl_abs", 0.0) for t in trades)
-        wins = sum(1 for t in trades if t.get("pnl_abs", 0.0) > 0)
-        win_rate = (wins / count * 100) if count > 0 else 0.0
-        pnl_color = "#c3e88d" if total_pnl >= 0 else "#ff757f"
-        return (
-            f'<div class="card">'
-            f'<div class="card-label">{label}</div>'
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">Trades</span>'
-            f'<span class="wf-metric-value">{count}</span></div>'
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">Total PnL</span>'
-            f'<span class="wf-metric-value" style="color:{pnl_color}">${total_pnl:,.2f}</span></div>'
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">Win Rate</span>'
-            f'<span class="wf-metric-value">{win_rate:.1f}%</span></div>'
-            f'</div>'
-        )
-
-    long_card = _direction_card("Long Trades", long_trades)
-    short_card = _direction_card("Short Trades", short_trades)
-    sections.append(
-        f'<div class="grid-2col" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px;">'
-        f'{long_card}{short_card}</div>'
-    )
-
-    # ── 2. Exit Reason Bar Chart ──
+    # ── 1. Exit Reason Bar Chart ──
     reason_counts: Dict[str, int] = {}
     for t in portfolio_trades:
         reason = t.get("reason", "unknown")
@@ -1811,6 +2621,10 @@ def generate_html_report(
     s2_trials = pipeline_result.get("s2_trials", pipeline_result.get("stage2_trials", "—"))
     hours = pipeline_result.get("duration_hours", pipeline_result.get("hours", "—"))
 
+    # Build portfolio equity curve from trades if not provided
+    if not portfolio_equity_curve and portfolio_trades:
+        portfolio_equity_curve = _build_equity_curve_from_trades(portfolio_trades)
+
     # Build per-pair equity curves from trades if not provided
     if not pair_equity_curves and per_pair_trades:
         for sym, trades in per_pair_trades.items():
@@ -1836,6 +2650,8 @@ def generate_html_report(
     # Render all sections
     hero = _render_hero_metrics(pipeline_result, eval_result, analysis)
     portfolio_eq = _render_portfolio_equity_curve(portfolio_equity_curve, timestamps)
+    underwater = _render_underwater_chart(portfolio_equity_curve, timestamps)
+    rolling_sharpe = _render_rolling_sharpe(portfolio_equity_curve, timestamps)
     concurrent = _render_concurrent_positions(portfolio_trades, timestamps)
     per_pair_tbl = _render_per_pair_table(pipeline_result, eval_result, analysis, excluded_symbols)
     per_pair_eq = _render_per_pair_equity_curves(filtered_pair_eq, timestamps)
@@ -1853,6 +2669,11 @@ def generate_html_report(
     corr_heat = _render_correlation_heatmap(corr_matrix)
     monthly = _render_monthly_returns(portfolio_trades, timestamps)
     trade_analysis = _render_trade_analysis(portfolio_trades, per_pair_trades)
+    long_short = _render_long_short_analysis(portfolio_trades)
+    top_drawdowns = _render_top_drawdowns(portfolio_equity_curve, timestamps)
+    streak_analysis = _render_streak_analysis(portfolio_trades, eval_result.get("portfolio_metrics", eval_result))
+    trade_timing = _render_trade_timing(portfolio_trades)
+    per_pair_monthly = _render_per_pair_monthly_heatmaps(per_pair_trades, excluded_symbols)
 
     header_html = f"""
     <div class="report-header">
@@ -1868,38 +2689,112 @@ def generate_html_report(
     </div>
     """
 
-    divider_overview = '<div class="section-divider"><h2>Portfolio Overview</h2></div>'
-    divider_s1 = '<div class="section-divider"><h2>Stage 1 — Per-Pair Optimization</h2></div>'
-    divider_s2 = '<div class="section-divider"><h2>Stage 2 — Portfolio Optimization</h2></div>'
-    divider_pairs = '<div class="section-divider"><h2>Per-Pair Results</h2></div>'
-    divider_trades = '<div class="section-divider"><h2>Trade Analysis</h2></div>'
+    divider_overview = '<div class="section-divider" id="sec-portfolio-overview"><h2>Portfolio Overview</h2></div>'
+    divider_s1 = '<div class="section-divider" id="sec-stage1"><h2>Stage 1 — Per-Pair Optimization</h2></div>'
+    divider_s2 = '<div class="section-divider" id="sec-stage2"><h2>Stage 2 — Portfolio Optimization</h2></div>'
+    divider_pairs = '<div class="section-divider" id="sec-per-pair"><h2>Per-Pair Results</h2></div>'
+    divider_trades = '<div class="section-divider" id="sec-trade-analysis"><h2>Trade Analysis</h2></div>'
+
+    sidebar_html = """
+<nav class="sidebar">
+    <div class="nav-section">Portfolio Overview</div>
+    <a href="#sec-hero">Hero Metrics</a>
+    <a href="#sec-portfolio-eq">Equity Curve</a>
+    <a href="#sec-underwater">Underwater</a>
+    <a href="#sec-rolling-sharpe">Rolling Sharpe</a>
+    <a href="#sec-concurrent">Concurrent Positions</a>
+    <a href="#sec-monthly">Monthly Returns</a>
+    <div class="nav-section">Trade Analysis</div>
+    <a href="#sec-long-short">Long vs Short</a>
+    <a href="#sec-top-drawdowns">Top Drawdowns</a>
+    <a href="#sec-streaks">Win/Loss Streaks</a>
+    <a href="#sec-trade-timing">Trade Timing</a>
+    <a href="#sec-pnl-contrib">P&amp;L Contribution</a>
+    <a href="#sec-correlation">Correlation</a>
+    <a href="#sec-exit-reasons">Exit Reasons</a>
+    <div class="nav-section">Per-Pair Results</div>
+    <a href="#sec-per-pair">Performance Table</a>
+    <a href="#sec-per-pair-eq">Equity Curves</a>
+    <a href="#sec-per-pair-monthly">Monthly Heatmaps</a>
+    <a href="#sec-tier-pbo">Tier &amp; PBO</a>
+    <div class="nav-section">Stage 1</div>
+    <a href="#sec-stage1">Parameters</a>
+    <a href="#sec-s1-top-trials">Top Trials</a>
+    <a href="#sec-s1-history">Optimization History</a>
+    <div class="nav-section">Stage 2</div>
+    <a href="#sec-stage2">Parameters</a>
+    <a href="#sec-pareto">Pareto Front</a>
+    <a href="#sec-s2-history">Optimization History</a>
+</nav>
+"""
+
+    observer_js = """
+<script>
+(function() {
+  var links = document.querySelectorAll('.sidebar a[href^="#"]');
+  var sections = [];
+  links.forEach(function(link) {
+    var id = link.getAttribute('href').substring(1);
+    var el = document.getElementById(id);
+    if (el) sections.push({el: el, link: link});
+  });
+  if (!sections.length) return;
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      sections.forEach(function(s) {
+        if (s.el === entry.target) {
+          if (entry.isIntersecting) s.link.classList.add('active');
+          else s.link.classList.remove('active');
+        }
+      });
+    });
+  }, {rootMargin: '-50% 0px -50% 0px'});
+  sections.forEach(function(s) { observer.observe(s.el); });
+})();
+// Trigger resize after layout to fix Plotly parcoords in flex containers
+window.addEventListener('load', function() {
+  setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 100);
+});
+</script>"""
 
     body = f"""
+<div class="report-layout">
+{sidebar_html}
+<main class="report-content">
 {header_html}
-{hero}
+<div id="sec-hero">{hero}</div>
 {divider_overview}
-{portfolio_eq}
-{concurrent}
-{monthly}
+<div id="sec-portfolio-eq">{portfolio_eq}</div>
+{underwater}
+{rolling_sharpe}
+<div id="sec-concurrent">{concurrent}</div>
+<div id="sec-monthly">{monthly}</div>
+{divider_trades}
+{long_short}
+{top_drawdowns}
+{streak_analysis}
+{trade_timing}
+<div id="sec-pnl-contrib">{pnl_contrib}</div>
+<div id="sec-correlation">{corr_heat}</div>
+<div id="sec-exit-reasons">{trade_analysis}</div>
+{divider_pairs}
+{per_pair_tbl}
+<div id="sec-per-pair-eq">{per_pair_eq}</div>
+{per_pair_monthly}
+<div id="sec-tier-pbo">{tier_tbl}
+{pbo_chart}
+{wf_eval}</div>
 {divider_s1}
 {s1_params}
 {s1_bullet}
+<div id="sec-s1-top-trials">{s1_top}</div>
+<div id="sec-s1-history">{s1_hist}</div>
 {divider_s2}
 {s2_params}
-{pareto}
-{s2_hist}
-{divider_trades}
-{pnl_contrib}
-{corr_heat}
-{trade_analysis}
-{divider_pairs}
-{per_pair_tbl}
-{per_pair_eq}
-{tier_tbl}
-{pbo_chart}
-{wf_eval}
-{s1_top}
-{s1_hist}
+<div id="sec-pareto">{pareto}</div>
+<div id="sec-s2-history">{s2_hist}</div>
+</main>
+</div>
 """
 
     html = f"""<!DOCTYPE html>
@@ -1915,6 +2810,7 @@ def generate_html_report(
 </head>
 <body>
 {body}
+{observer_js}
 </body>
 </html>"""
 

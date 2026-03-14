@@ -23,6 +23,13 @@ from mqe.html_report import (
     _render_correlation_heatmap,
     _render_monthly_returns,
     _render_trade_analysis,
+    _render_underwater_chart,
+    _render_rolling_sharpe,
+    _render_long_short_analysis,
+    _render_top_drawdowns,
+    _render_streak_analysis,
+    _render_trade_timing,
+    _render_per_pair_monthly_heatmaps,
 )
 
 
@@ -96,9 +103,9 @@ def eval_result_with_metrics():
     }
 
 
-def test_hero_metrics_renders_6_cards(eval_result_with_metrics):
+def test_hero_metrics_renders_10_cards_fixture(eval_result_with_metrics):
     html = _render_hero_metrics({}, eval_result_with_metrics, {})
-    assert html.count('class="hero-card"') == 6
+    assert html.count('class="hero-card"') == 10
 
 
 def test_hero_metrics_contains_specific_values(eval_result_with_metrics):
@@ -146,7 +153,38 @@ def test_hero_metrics_dd_negative_class():
 def test_hero_metrics_empty_data_no_crash():
     html = _render_hero_metrics({}, {}, {})
     assert 'class="hero-grid"' in html
-    assert html.count('class="hero-card"') == 6
+    assert html.count('class="hero-card"') == 10
+
+
+def test_hero_metrics_renders_10_cards():
+    eval_result = {
+        "portfolio_result_summary": {"equity": 150000, "max_drawdown": 0.06, "total_trades": 400},
+        "portfolio_metrics": {
+            "total_pnl_pct": 50.0, "calmar_ratio": 5.0, "sharpe_ratio_equity_based": 3.0,
+            "sortino_ratio": 7.5, "recovery_factor": 25.0, "profit_factor": 1.6,
+        },
+    }
+    html = _render_hero_metrics({}, eval_result, {})
+    assert html.count('class="hero-card"') == 10
+
+
+def test_hero_metrics_contains_new_metrics():
+    eval_result = {
+        "portfolio_result_summary": {},
+        "portfolio_metrics": {
+            "sortino_ratio": 7.50,
+            "calmar_ratio": 5.82,
+            "recovery_factor": 25.96,
+            "profit_factor": 1.59,
+        },
+    }
+    html = _render_hero_metrics({}, eval_result, {})
+    assert "Sortino" in html
+    assert "7.50" in html
+    assert "Recovery" in html
+    assert "25.96" in html
+    assert "Profit Factor" in html
+    assert "1.59" in html
 
 
 # ─── Portfolio Equity Curve Tests ───
@@ -196,6 +234,62 @@ def test_portfolio_equity_curve_without_timestamps():
     equity = [100000, 102000, 101000]
     html = _render_portfolio_equity_curve(equity, [])
     assert "Plotly.newPlot" in html
+
+
+# ─── Underwater Chart Tests ───
+
+
+def test_underwater_chart_empty_data():
+    html = _render_underwater_chart([], [])
+    assert html == ""
+
+
+def test_underwater_chart_has_plotly():
+    equity = [100000, 102000, 101000, 105000, 103000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05"]
+    html = _render_underwater_chart(equity, ts)
+    assert "Plotly.newPlot" in html
+
+
+def test_underwater_chart_div_id():
+    equity = [100000, 102000, 101000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03"]
+    html = _render_underwater_chart(equity, ts)
+    assert 'id="underwater-chart"' in html
+
+
+def test_underwater_chart_negative_values():
+    equity = [100000, 102000, 101000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03"]
+    html = _render_underwater_chart(equity, ts)
+    assert "tozeroy" in html
+
+
+# ─── Rolling Sharpe Tests ───
+
+
+def test_rolling_sharpe_empty_data():
+    html = _render_rolling_sharpe([], [])
+    assert html == ""
+
+
+def test_rolling_sharpe_too_few_points():
+    equity = [100000 + i * 10 for i in range(100)]
+    ts = [f"2026-01-01T{i:02d}:00" for i in range(100)]
+    html = _render_rolling_sharpe(equity, ts)
+    assert html == ""
+
+
+def test_rolling_sharpe_has_plotly():
+    import random
+    random.seed(42)
+    equity = [100000.0]
+    for _ in range(2199):
+        equity.append(equity[-1] + random.gauss(5, 100))
+    ts = [f"t{i}" for i in range(2200)]
+    html = _render_rolling_sharpe(equity, ts)
+    assert "Plotly.newPlot" in html
+    assert 'id="rolling-sharpe-chart"' in html
 
 
 # ─── Concurrent Positions Tests ───
@@ -366,6 +460,13 @@ def test_per_pair_table_verdict_fail():
     }
     html = _render_per_pair_table(pipeline, eval_r)
     assert "verdict-fail" in html
+
+
+def test_per_pair_table_has_sort_js(per_pair_pipeline_result, per_pair_eval_result):
+    html = _render_per_pair_table(per_pair_pipeline_result, per_pair_eval_result)
+    assert 'id="per-pair-table"' in html
+    assert "sortTable" in html
+    assert "sortable" in html
 
 
 # ─── Per-Pair Equity Curves Grid (Task 13) ───
@@ -1063,12 +1164,6 @@ def trade_analysis_trades():
     ]
 
 
-def test_trade_analysis_long_short_cards(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    assert "Long Trades" in html
-    assert "Short Trades" in html
-
-
 def test_trade_analysis_exit_reasons_chart(trade_analysis_trades):
     html = _render_trade_analysis(trade_analysis_trades, {})
     assert 'id="exit-reasons-chart"' in html
@@ -1090,34 +1185,131 @@ def test_trade_analysis_empty_data():
     assert "no-data" in html
 
 
-def test_trade_analysis_grid_2col(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    assert "grid-2col" in html
-
-
-def test_trade_analysis_long_count(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    # 3 long trades
-    # Check that the long card contains "3"
-    long_idx = html.index("Long Trades")
-    short_idx = html.index("Short Trades")
-    long_section = html[long_idx:short_idx]
-    assert ">3<" in long_section
-
-
-def test_trade_analysis_short_count(trade_analysis_trades):
-    html = _render_trade_analysis(trade_analysis_trades, {})
-    # 2 short trades
-    short_idx = html.index("Short Trades")
-    short_section = html[short_idx:short_idx + 500]
-    assert ">2<" in short_section
-
-
 def test_trade_analysis_exit_reason_names(trade_analysis_trades):
     html = _render_trade_analysis(trade_analysis_trades, {})
     assert "trailing_stop" in html
     assert "hard_stop" in html
     assert "max_hold" in html
+
+
+# ─── Long/Short Analysis (Task 5) ───
+
+
+def test_long_short_analysis_empty_data():
+    html = _render_long_short_analysis([])
+    assert "no-data" in html
+
+
+def test_long_short_analysis_cards():
+    trades = [
+        {"direction": "long", "pnl_abs": 1000, "pnl_pct": 2.0, "hold_bars": 24},
+        {"direction": "long", "pnl_abs": -500, "pnl_pct": -1.0, "hold_bars": 12},
+        {"direction": "short", "pnl_abs": 800, "pnl_pct": 1.5, "hold_bars": 18},
+    ]
+    html = _render_long_short_analysis(trades)
+    assert "LONG" in html
+    assert "SHORT" in html
+    assert "stat-grid-2" in html
+
+
+def test_long_short_analysis_stacked_bar():
+    trades = [
+        {"direction": "long", "pnl_abs": 1000, "pnl_pct": 2.0, "hold_bars": 24},
+        {"direction": "short", "pnl_abs": 800, "pnl_pct": 1.5, "hold_bars": 18},
+    ]
+    html = _render_long_short_analysis(trades)
+    assert "Plotly.newPlot" in html
+    assert 'id="long-short-chart"' in html
+
+
+def test_long_short_analysis_no_short_trades():
+    trades = [{"direction": "long", "pnl_abs": 1000, "pnl_pct": 2.0, "hold_bars": 24}]
+    html = _render_long_short_analysis(trades)
+    assert "LONG" in html
+    assert "SHORT" in html
+
+
+# ─── Top Drawdowns (Task 6) ───
+
+
+def test_top_drawdowns_empty_data():
+    html = _render_top_drawdowns([], [])
+    assert html == ""
+
+
+def test_top_drawdowns_has_table():
+    equity = [100000, 105000, 100000, 108000]
+    ts = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
+    html = _render_top_drawdowns(equity, ts)
+    assert "<table" in html
+    assert "Depth" in html
+    assert "Peak" in html
+    assert "Trough" in html
+    assert "Recovery" in html
+
+
+def test_top_drawdowns_limits_to_5():
+    equity = [100000]
+    for i in range(10):
+        equity.append(equity[-1] + 5000)
+        equity.append(equity[-1] - 3000)
+        equity.append(equity[-1] + 5000)
+    ts = [f"t{i}" for i in range(len(equity))]
+    html = _render_top_drawdowns(equity, ts)
+    assert html.count("<tr>") <= 6
+
+
+# ─── Streak Analysis (Task 7) ───
+
+
+def test_streak_analysis_empty_data():
+    html = _render_streak_analysis([], {})
+    assert "no-data" in html
+
+
+def test_streak_analysis_stat_cards():
+    trades = [
+        {"pnl_abs": 100}, {"pnl_abs": 200}, {"pnl_abs": -50},
+        {"pnl_abs": -30}, {"pnl_abs": -10}, {"pnl_abs": 80},
+    ]
+    metrics = {"max_win_streak": 2, "max_loss_streak": 3}
+    html = _render_streak_analysis(trades, metrics)
+    assert "stat-grid-4" in html
+    assert "Max Win" in html
+    assert "Max Loss" in html
+
+
+def test_streak_analysis_histogram():
+    trades = [{"pnl_abs": 100}, {"pnl_abs": 200}, {"pnl_abs": -50}]
+    html = _render_streak_analysis(trades, {})
+    assert "Plotly.newPlot" in html
+    assert 'id="streak-chart"' in html
+
+
+# ─── Trade Timing Heatmap (Task 8) ───
+
+
+def test_trade_timing_empty_data():
+    html = _render_trade_timing([])
+    assert "no-data" in html
+
+
+def test_trade_timing_has_heatmap():
+    trades = [
+        {"entry_ts": "2025-01-06T10:00:00"},
+        {"entry_ts": "2025-01-06T14:00:00"},
+        {"entry_ts": "2025-01-07T08:00:00"},
+    ]
+    html = _render_trade_timing(trades)
+    assert "Plotly.newPlot" in html
+    assert 'id="trade-timing-chart"' in html
+    assert "heatmap" in html
+
+
+def test_trade_timing_day_names():
+    trades = [{"entry_ts": "2025-01-06T10:00:00"}]
+    html = _render_trade_timing(trades)
+    assert "Monday" in html
 
 
 # ─── Save HTML Report (Task 27) ───
@@ -1262,3 +1454,57 @@ class TestFullReportIntegration:
         assert "ETH/USDT" in html
         assert "148,742" in html
         assert "Plotly.newPlot" in html
+        # New sections
+        assert 'class="sidebar"' in html
+        assert 'class="report-layout"' in html
+        assert "Sortino" in html
+        assert "Profit Factor" in html
+        assert "sortTable" in html
+
+
+# ─── Per-Pair Monthly Heatmaps (Task 10) ───
+
+
+def test_per_pair_monthly_heatmaps_empty_data():
+    html = _render_per_pair_monthly_heatmaps({}, set())
+    assert "no-data" in html
+
+
+def test_per_pair_monthly_heatmaps_has_plotly():
+    trades = {
+        "BTC/USDT": [
+            {"exit_ts": "2025-01-15T10:00:00", "pnl_abs": 2000.0},
+            {"exit_ts": "2025-02-10T10:00:00", "pnl_abs": -500.0},
+            {"exit_ts": "2025-03-05T10:00:00", "pnl_abs": 1500.0},
+        ],
+    }
+    html = _render_per_pair_monthly_heatmaps(trades, set())
+    assert "Plotly.newPlot" in html
+    assert "heatmap" in html
+    assert "BTC/USDT" in html
+
+
+def test_per_pair_monthly_heatmaps_excludes_tier_x():
+    trades = {
+        "BTC/USDT": [{"exit_ts": "2025-01-15T10:00:00", "pnl_abs": 100}],
+        "JUNK/USDT": [{"exit_ts": "2025-01-15T10:00:00", "pnl_abs": -100}],
+    }
+    html = _render_per_pair_monthly_heatmaps(trades, {"JUNK/USDT"})
+    assert "BTC/USDT" in html
+    assert "JUNK/USDT" not in html
+
+
+# ─── Sidebar + Layout Tests (Task 11) ───
+
+
+def test_report_has_sidebar(minimal_report_args):
+    result = generate_html_report(**minimal_report_args)
+    assert 'class="sidebar"' in result
+    assert 'class="report-layout"' in result
+    assert 'class="report-content"' in result
+
+
+def test_report_has_section_ids(minimal_report_args):
+    result = generate_html_report(**minimal_report_args)
+    assert 'id="sec-hero"' in result
+    assert 'id="sec-portfolio-overview"' in result
