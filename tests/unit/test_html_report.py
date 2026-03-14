@@ -29,6 +29,7 @@ from mqe.html_report import (
     _render_top_drawdowns,
     _render_streak_analysis,
     _render_trade_timing,
+    _render_per_pair_monthly_heatmaps,
 )
 
 
@@ -1453,3 +1454,35 @@ class TestFullReportIntegration:
         assert "ETH/USDT" in html
         assert "148,742" in html
         assert "Plotly.newPlot" in html
+
+
+# ─── Per-Pair Monthly Heatmaps (Task 10) ───
+
+
+def test_per_pair_monthly_heatmaps_empty_data():
+    html = _render_per_pair_monthly_heatmaps({}, set())
+    assert "no-data" in html
+
+
+def test_per_pair_monthly_heatmaps_has_plotly():
+    trades = {
+        "BTC/USDT": [
+            {"exit_ts": "2025-01-15T10:00:00", "pnl_abs": 2000.0},
+            {"exit_ts": "2025-02-10T10:00:00", "pnl_abs": -500.0},
+            {"exit_ts": "2025-03-05T10:00:00", "pnl_abs": 1500.0},
+        ],
+    }
+    html = _render_per_pair_monthly_heatmaps(trades, set())
+    assert "Plotly.newPlot" in html
+    assert "heatmap" in html
+    assert "BTC/USDT" in html
+
+
+def test_per_pair_monthly_heatmaps_excludes_tier_x():
+    trades = {
+        "BTC/USDT": [{"exit_ts": "2025-01-15T10:00:00", "pnl_abs": 100}],
+        "JUNK/USDT": [{"exit_ts": "2025-01-15T10:00:00", "pnl_abs": -100}],
+    }
+    html = _render_per_pair_monthly_heatmaps(trades, {"JUNK/USDT"})
+    assert "BTC/USDT" in html
+    assert "JUNK/USDT" not in html

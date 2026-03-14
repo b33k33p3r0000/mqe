@@ -1963,6 +1963,118 @@ def _render_monthly_returns(
 </div>"""
 
 
+def _render_per_pair_monthly_heatmaps(
+    per_pair_trades: Dict[str, List[Dict[str, Any]]],
+    excluded_symbols: set,
+) -> str:
+    """Render per-pair monthly PnL heatmaps using Plotly (one chart per symbol)."""
+    if not per_pair_trades:
+        return '<div id="sec-per-pair-monthly" class="no-data">No per-pair trade data for monthly heatmaps</div>'
+
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    charts: List[str] = []
+    for symbol in sorted(per_pair_trades.keys()):
+        if symbol in excluded_symbols:
+            continue
+
+        trades = per_pair_trades[symbol]
+        if not trades:
+            continue
+
+        # Group trades by YYYY-MM, sum pnl_abs
+        monthly_pnl: Dict[str, float] = {}
+        for trade in trades:
+            exit_ts = trade.get("exit_ts", "")
+            if not exit_ts:
+                continue
+            try:
+                year_month = str(exit_ts)[:7]
+                if len(year_month) == 7 and year_month[4] == "-":
+                    pnl = float(trade.get("pnl_abs", 0.0))
+                    monthly_pnl[year_month] = monthly_pnl.get(year_month, 0.0) + pnl
+            except (ValueError, IndexError):
+                continue
+
+        if not monthly_pnl:
+            continue
+
+        # Build year x month matrix (rows = years ascending, cols = Jan-Dec)
+        years = sorted(set(ym[:4] for ym in monthly_pnl.keys()))
+        # z[year_idx][month_idx] = pnl or None
+        z_matrix: List[List[Any]] = []
+        text_matrix: List[List[str]] = []
+        for year in years:
+            z_row: List[Any] = []
+            text_row: List[str] = []
+            for m_idx in range(1, 13):
+                key = f"{year}-{m_idx:02d}"
+                pnl = monthly_pnl.get(key, None)
+                if pnl is not None:
+                    z_row.append(pnl)
+                    sign = "+" if pnl >= 0 else ""
+                    text_row.append(f"${sign}{pnl:,.0f}")
+                else:
+                    z_row.append(None)
+                    text_row.append("")
+            z_matrix.append(z_row)
+            text_matrix.append(text_row)
+
+        safe_id = symbol.replace("/", "_").replace(" ", "_")
+        div_id = f"monthly-heatmap-{safe_id}"
+        height = max(120, len(years) * 60 + 60)
+
+        z_json = json.dumps(z_matrix)
+        text_json = json.dumps(text_matrix)
+        years_json = json.dumps(years)
+        months_json = json.dumps(month_names)
+
+        chart_html = f"""<div class="chart-container">
+<h4 style="color:var(--accent-purple);font-size:13px;margin-bottom:8px;">{symbol} — Monthly Returns</h4>
+<div id="{div_id}" style="width:100%;height:{height}px;"></div>
+<script>
+(function() {{
+  var z = {z_json};
+  var text = {text_json};
+  var years = {years_json};
+  var months = {months_json};
+  var trace = {{
+    z: z,
+    x: months,
+    y: years,
+    text: text,
+    texttemplate: '%{{text}}',
+    type: 'heatmap',
+    colorscale: 'RdYlGn',
+    zmid: 0,
+    showscale: true,
+    colorbar: {{
+      title: 'PnL ($)',
+      titlefont: {{color: '#c8d3f5'}},
+      tickfont: {{color: '#c8d3f5'}}
+    }}
+  }};
+  var layout = {{
+    paper_bgcolor: '#2f334d',
+    plot_bgcolor: '#2f334d',
+    font: {{color: '#c8d3f5', family: "'JetBrains Mono', monospace", size: 11}},
+    margin: {{l: 60, r: 60, t: 20, b: 40}},
+    xaxis: {{tickangle: 0}},
+    yaxis: {{autorange: 'reversed', dtick: 1}}
+  }};
+  Plotly.newPlot('{div_id}', [trace], layout, {{responsive: true}});
+}})();
+</script>
+</div>"""
+        charts.append(chart_html)
+
+    if not charts:
+        return '<div id="sec-per-pair-monthly" class="no-data">No per-pair trade data for monthly heatmaps</div>'
+
+    return f'<div id="sec-per-pair-monthly">{"".join(charts)}</div>'
+
+
 def _render_long_short_analysis(portfolio_trades: List[Dict[str, Any]]) -> str:
     if not portfolio_trades:
         return '<div id="sec-long-short" class="no-data">No trade data for long/short analysis</div>'
