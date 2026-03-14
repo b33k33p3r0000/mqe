@@ -1,5 +1,27 @@
 # MQE Session Notes
 
+## 2026-03-14 — /analyze 20260312_133312
+
+**Verdict:** MEDIUM confidence — pipeline WF+PBO+tier works, portfolio DD well-controlled (-6.27%).
+
+**Key findings:**
+- portfolio_heat=0.38 was inactive (0 exits from 3,071 trades) — range rescaled to [0.05-0.15]
+- Inter-pair correlations 0.80-0.93 limit diversification value
+- XRP B-tier despite Calmar 0.21, DD -22.5% — added Calmar floor (<0.5 → cap at C)
+- 85% PnL from last 18 months (compound effect + possible regime dependency)
+- 5/15 pairs correctly excluded as X-tier by WF eval
+
+**Decided actions:**
+- [x] R1: portfolio_heat range [0.15-0.50] → [0.05-0.15] (stage2.py)
+- [x] R2: Calmar floor for tiers — eval Calmar < 0.5 caps at C-tier (optimize.py)
+- [x] R3: --no-garch CLI flag for A/B comparison runs
+- [x] S1 trial presets reduced: 65k→50k, 50k→30k, 35k→20k
+- [x] run.sh: interactive GARCH toggle (enabled/disabled) added to preset menu
+
+**Deferred:**
+- Batch 2: Corr-aware drawdown exit (wait for Batch 1 re-opt results first)
+- Batch 4: Hard_stop rate analysis + market regime filter (exploratory)
+
 ## 2026-02-28 — Initial Implementation
 
 ### What was done
