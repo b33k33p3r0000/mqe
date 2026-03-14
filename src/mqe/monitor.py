@@ -251,9 +251,10 @@ def load_live_run(run_dir: Path) -> List[LivePairStatus]:
 
     pairs: List[LivePairStatus] = []
 
-    # Completed pairs: *.json excluding *_progress.json
+    # Completed pairs: *.json excluding auxiliary files (*_progress, *_history, *_top_trials)
+    _SKIP_SUFFIXES = ("_progress", "_history", "_top_trials")
     for f in sorted(s1_dir.glob("*.json")):
-        if f.stem.endswith("_progress"):
+        if any(f.stem.endswith(s) for s in _SKIP_SUFFIXES):
             continue
         data = _load_json(f)
         if data is None:

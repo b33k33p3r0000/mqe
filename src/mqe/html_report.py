@@ -38,7 +38,9 @@ body {
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
-    padding: 24px;
+    padding: 24px 40px;
+    max-width: 1920px;
+    margin: 0 auto;
 }
 
 h1, h2, h3 {
@@ -522,14 +524,62 @@ def _build_equity_curve_from_trades(
     return curve
 
 
+def build_daily_equity_curve(
+    trades: list,
+    start_equity: float = 100_000.0,
+) -> tuple:
+    """Build daily-resampled equity curve from trades.
+
+    Returns (dates: List[str], equity: List[float]) with one point per day.
+    """
+    if not trades:
+        return [], []
+
+    from datetime import datetime, timedelta
+
+    sorted_trades = sorted(trades, key=lambda t: t.get("exit_ts", ""))
+
+    # Aggregate PnL per day
+    daily_pnl: Dict[str, float] = {}
+    for t in sorted_trades:
+        exit_ts = str(t.get("exit_ts", ""))[:10]  # YYYY-MM-DD
+        if len(exit_ts) == 10 and exit_ts[4] == "-":
+            daily_pnl[exit_ts] = daily_pnl.get(exit_ts, 0.0) + t.get("pnl_abs", 0.0)
+
+    if not daily_pnl:
+        return [], []
+
+    dates_with_pnl = sorted(daily_pnl.keys())
+    start_date = datetime.strptime(dates_with_pnl[0], "%Y-%m-%d")
+    end_date = datetime.strptime(dates_with_pnl[-1], "%Y-%m-%d")
+
+    all_dates: List[str] = []
+    current = start_date
+    while current <= end_date:
+        all_dates.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+
+    equity = start_equity
+    eq_curve: List[float] = []
+    for d in all_dates:
+        equity += daily_pnl.get(d, 0.0)
+        eq_curve.append(equity)
+
+    return all_dates, eq_curve
+
+
 def _render_per_pair_table(
     pipeline_result: Dict[str, Any],
     eval_result: Dict[str, Any],
     analysis: Dict[str, Any] | None = None,
+    excluded_symbols: set | None = None,
 ) -> str:
     per_pair = eval_result.get("per_pair_metrics", {})
     if not per_pair:
         return '<div class="no-data">No per-pair data available</div>'
+
+    if excluded_symbols:
+        per_pair = {s: m for s, m in per_pair.items() if s not in excluded_symbols}
 
     tiers = pipeline_result.get("tier_assignments", {})
     # Build verdict lookup from analysis
@@ -772,10 +822,16 @@ def _render_pbo_chart(pipeline_result: Dict[str, Any]) -> str:
     """
 
 
-def _render_wf_evaluation(eval_result: Dict[str, Any]) -> str:
+def _render_wf_evaluation(
+    eval_result: Dict[str, Any],
+    excluded_symbols: set | None = None,
+) -> str:
     wf_metrics = eval_result.get("wf_eval_metrics", {})
     if not wf_metrics:
         return '<div class="no-data">No walk-forward evaluation data available</div>'
+
+    if excluded_symbols:
+        wf_metrics = {s: m for s, m in wf_metrics.items() if s not in excluded_symbols}
 
     cards = []
     for symbol in sorted(wf_metrics.keys()):
@@ -996,7 +1052,7 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
 
         # ── Parallel Coordinates Chart ──
         # Build dimensions from params of top trials
-        # Filter out fixed/categorical params (no variance or non-numeric)
+        # Filter out fixed/categorical params (non-numeric only)
         _EXCLUDED_PARAMS = {"allow_flip", "trend_strict", "trend_tf"}
         param_keys = []
         if trials:
@@ -1007,18 +1063,20 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
                 # Skip non-numeric
                 if not all(isinstance(v, (int, float)) for v in vals):
                     continue
-                # Skip params with no variance (all identical)
-                if len(set(vals)) <= 1:
-                    continue
                 param_keys.append(pk)
 
         dimensions = []
         for pk in param_keys:
             vals = [t.get("params", {}).get(pk, 0) for t in trials]
-            dimensions.append({
+            dim: Dict[str, Any] = {
                 "label": pk,
                 "values": vals,
-            })
+            }
+            # Use PARAM_RANGES for axis range so convergence is visible
+            if pk in PARAM_RANGES:
+                lo, hi = PARAM_RANGES[pk]
+                dim["range"] = [float(lo), float(hi)]
+            dimensions.append(dim)
 
         obj_vals = [t.get("objective", 0) for t in trials]
         parcoords_trace = {
@@ -1760,19 +1818,34 @@ def generate_html_report(
             if curve:
                 pair_equity_curves[sym] = curve
 
+    # Determine tier-X symbols to exclude from per-pair detail sections
+    tier_assignments = pipeline_result.get("tier_assignments", {})
+    pbo_results = pipeline_result.get("pbo_results", {})
+    excluded_symbols: set = set()
+    for sym, t in tier_assignments.items():
+        pbo = pbo_results.get(sym, {})
+        final_tier = pbo.get("final_tier", t.get("tier", ""))
+        if final_tier == "X":
+            excluded_symbols.add(sym)
+
+    # Filter per-pair data to exclude tier-X
+    filtered_pair_eq = {s: c for s, c in pair_equity_curves.items() if s not in excluded_symbols}
+    filtered_s1_top = {s: d for s, d in s1_top_trials.items() if s not in excluded_symbols}
+    filtered_s1_hist = {s: d for s, d in s1_history.items() if s not in excluded_symbols}
+
     # Render all sections
     hero = _render_hero_metrics(pipeline_result, eval_result, analysis)
     portfolio_eq = _render_portfolio_equity_curve(portfolio_equity_curve, timestamps)
     concurrent = _render_concurrent_positions(portfolio_trades, timestamps)
-    per_pair_tbl = _render_per_pair_table(pipeline_result, eval_result, analysis)
-    per_pair_eq = _render_per_pair_equity_curves(pair_equity_curves, timestamps)
+    per_pair_tbl = _render_per_pair_table(pipeline_result, eval_result, analysis, excluded_symbols)
+    per_pair_eq = _render_per_pair_equity_curves(filtered_pair_eq, timestamps)
     tier_tbl = _render_tier_table(pipeline_result)
     pbo_chart = _render_pbo_chart(pipeline_result)
-    wf_eval = _render_wf_evaluation(eval_result)
+    wf_eval = _render_wf_evaluation(eval_result, excluded_symbols)
     s1_params = _render_s1_params_table(pipeline_result)
     s1_bullet = _render_s1_bullet_chart(pipeline_result)
-    s1_top = _render_s1_top_trials(s1_top_trials)
-    s1_hist = _render_s1_optimization_history(s1_history)
+    s1_top = _render_s1_top_trials(filtered_s1_top)
+    s1_hist = _render_s1_optimization_history(filtered_s1_hist)
     s2_params = _render_s2_params(pareto_front)
     pareto = _render_pareto_front(pareto_front)
     s2_hist = _render_s2_optimization_history(s2_history)
@@ -1795,34 +1868,38 @@ def generate_html_report(
     </div>
     """
 
-    divider_s1 = '<div class="section-divider"><h2>Stage 1 — Per-Pair</h2></div>'
-    divider_s2 = '<div class="section-divider"><h2>Stage 2 — Portfolio</h2></div>'
+    divider_overview = '<div class="section-divider"><h2>Portfolio Overview</h2></div>'
+    divider_s1 = '<div class="section-divider"><h2>Stage 1 — Per-Pair Optimization</h2></div>'
+    divider_s2 = '<div class="section-divider"><h2>Stage 2 — Portfolio Optimization</h2></div>'
+    divider_pairs = '<div class="section-divider"><h2>Per-Pair Results</h2></div>'
     divider_trades = '<div class="section-divider"><h2>Trade Analysis</h2></div>'
 
     body = f"""
 {header_html}
 {hero}
+{divider_overview}
 {portfolio_eq}
 {concurrent}
+{monthly}
+{divider_s1}
+{s1_params}
+{s1_bullet}
+{divider_s2}
+{s2_params}
+{pareto}
+{s2_hist}
+{divider_trades}
+{pnl_contrib}
+{corr_heat}
+{trade_analysis}
+{divider_pairs}
 {per_pair_tbl}
 {per_pair_eq}
 {tier_tbl}
 {pbo_chart}
 {wf_eval}
-{divider_s1}
-{s1_params}
-{s1_bullet}
 {s1_top}
 {s1_hist}
-{divider_s2}
-{s2_params}
-{pareto}
-{s2_hist}
-{pnl_contrib}
-{corr_heat}
-{monthly}
-{divider_trades}
-{trade_analysis}
 """
 
     html = f"""<!DOCTYPE html>
