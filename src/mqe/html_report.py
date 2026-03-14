@@ -427,6 +427,10 @@ def _render_hero_metrics(
     sharpe = metrics.get("sharpe_ratio_equity_based", 0.0)
     max_dd = summary.get("max_drawdown", 0.0)
     total_trades = summary.get("total_trades", 0)
+    sortino = metrics.get("sortino_ratio", 0.0)
+    recovery = metrics.get("recovery_factor", 0.0)
+    profit_factor = metrics.get("profit_factor", 0.0)
+    win_rate = metrics.get("win_rate", 0.0)
 
     # Format values
     equity_str = f"${equity:,.2f}"
@@ -446,13 +450,49 @@ def _render_hero_metrics(
     else:
         dd_class = ""
 
+    # Sortino: green>2, yellow>1, red<1
+    if sortino > 2:
+        sortino_class = "positive"
+    elif sortino > 1:
+        sortino_class = "warning"
+    else:
+        sortino_class = "negative"
+
+    # Calmar: green>3, yellow>1, red<1
+    if calmar > 3:
+        calmar_class = "positive"
+    elif calmar > 1:
+        calmar_class = "warning"
+    else:
+        calmar_class = "negative"
+
+    # Recovery Factor: green>5, yellow>2, red<1
+    if recovery > 5:
+        recovery_class = "positive"
+    elif recovery > 2:
+        recovery_class = "warning"
+    else:
+        recovery_class = "negative"
+
+    # Profit Factor: green>1.5, yellow>1, red<1
+    if profit_factor > 1.5:
+        pf_class = "positive"
+    elif profit_factor > 1:
+        pf_class = "warning"
+    else:
+        pf_class = "negative"
+
     cards = [
         ("Final Equity", equity_str, ""),
         ("Total PnL", pnl_str, pnl_class),
-        ("Calmar Ratio", calmar_str, ""),
+        ("Calmar Ratio", calmar_str, calmar_class),
         ("Sharpe (equity)", sharpe_str, ""),
         ("Max Drawdown", dd_str, dd_class),
         ("Total Trades", trades_str, ""),
+        ("Sortino", f"{sortino:.2f}", sortino_class),
+        ("Recovery Factor", f"{recovery:.2f}", recovery_class),
+        ("Profit Factor", f"{profit_factor:.2f}", pf_class),
+        ("Win Rate", f"{win_rate:.1f}%", ""),
     ]
 
     html_cards = []

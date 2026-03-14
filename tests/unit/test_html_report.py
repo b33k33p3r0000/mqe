@@ -96,9 +96,9 @@ def eval_result_with_metrics():
     }
 
 
-def test_hero_metrics_renders_6_cards(eval_result_with_metrics):
+def test_hero_metrics_renders_10_cards_fixture(eval_result_with_metrics):
     html = _render_hero_metrics({}, eval_result_with_metrics, {})
-    assert html.count('class="hero-card"') == 6
+    assert html.count('class="hero-card"') == 10
 
 
 def test_hero_metrics_contains_specific_values(eval_result_with_metrics):
@@ -146,7 +146,38 @@ def test_hero_metrics_dd_negative_class():
 def test_hero_metrics_empty_data_no_crash():
     html = _render_hero_metrics({}, {}, {})
     assert 'class="hero-grid"' in html
-    assert html.count('class="hero-card"') == 6
+    assert html.count('class="hero-card"') == 10
+
+
+def test_hero_metrics_renders_10_cards():
+    eval_result = {
+        "portfolio_result_summary": {"equity": 150000, "max_drawdown": 0.06, "total_trades": 400},
+        "portfolio_metrics": {
+            "total_pnl_pct": 50.0, "calmar_ratio": 5.0, "sharpe_ratio_equity_based": 3.0,
+            "sortino_ratio": 7.5, "recovery_factor": 25.0, "profit_factor": 1.6,
+        },
+    }
+    html = _render_hero_metrics({}, eval_result, {})
+    assert html.count('class="hero-card"') == 10
+
+
+def test_hero_metrics_contains_new_metrics():
+    eval_result = {
+        "portfolio_result_summary": {},
+        "portfolio_metrics": {
+            "sortino_ratio": 7.50,
+            "calmar_ratio": 5.82,
+            "recovery_factor": 25.96,
+            "profit_factor": 1.59,
+        },
+    }
+    html = _render_hero_metrics({}, eval_result, {})
+    assert "Sortino" in html
+    assert "7.50" in html
+    assert "Recovery" in html
+    assert "25.96" in html
+    assert "Profit Factor" in html
+    assert "1.59" in html
 
 
 # ─── Portfolio Equity Curve Tests ───
