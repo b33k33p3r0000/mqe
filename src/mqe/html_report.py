@@ -427,7 +427,7 @@ def _render_hero_metrics(
     calmar = metrics.get("calmar_ratio", 0.0)
     sharpe = metrics.get("sharpe_ratio_equity_based", 0.0)
     max_dd = summary.get("max_drawdown", 0.0)
-    total_trades = summary.get("total_trades", 0)
+    total_trades = summary.get("total_trades", summary.get("trades", metrics.get("trades", 0)))
     sortino = metrics.get("sortino_ratio", 0.0)
     recovery = metrics.get("recovery_factor", 0.0)
     profit_factor = metrics.get("profit_factor", 0.0)
@@ -1573,7 +1573,8 @@ def _render_s2_params(pareto_front: Dict[str, Any]) -> str:
     if not portfolio_params:
         return '<div class="no-data">No S2 portfolio parameters available</div>'
 
-    rows_html = []
+    # Render as horizontal stat cards (4 params side by side)
+    cards_html = []
     for param_name, (lo, hi) in S2_RANGES.items():
         val = portfolio_params.get(param_name)
         if val is None:
@@ -1582,17 +1583,18 @@ def _render_s2_params(pareto_front: Dict[str, Any]) -> str:
             val_str = f"{val:.4g}"
         else:
             val_str = str(val)
-        rows_html.append(
-            f'<div class="wf-metric-row">'
-            f'<span class="wf-metric-label">{param_name}</span>'
-            f'<span class="wf-metric-value">{val_str} <span style="color:var(--text-muted);font-size:10px;">[{lo} — {hi}]</span></span>'
+        cards_html.append(
+            f'<div class="stat-card">'
+            f'<div class="stat-label">{param_name}</div>'
+            f'<div class="stat-value">{val_str}</div>'
+            f'<div style="color:var(--text-muted);font-size:10px;margin-top:4px;">range: {lo} — {hi}</div>'
             f'</div>'
         )
 
     return (
-        f'<div class="card" style="max-width:500px;margin-bottom:24px;">'
+        f'<div style="margin-bottom:24px;">'
         f'<h3 style="color:#c099ff;margin-bottom:12px;">S2 Portfolio Parameters</h3>'
-        f'{"".join(rows_html)}'
+        f'<div class="stat-grid-4">{"".join(cards_html)}</div>'
         f'</div>'
     )
 
@@ -2616,6 +2618,10 @@ def generate_html_report(
     s1_trials = pipeline_result.get("s1_trials", pipeline_result.get("stage1_trials", "—"))
     s2_trials = pipeline_result.get("s2_trials", pipeline_result.get("stage2_trials", "—"))
     hours = pipeline_result.get("duration_hours", pipeline_result.get("hours", "—"))
+
+    # Build portfolio equity curve from trades if not provided
+    if not portfolio_equity_curve and portfolio_trades:
+        portfolio_equity_curve = _build_equity_curve_from_trades(portfolio_trades)
 
     # Build per-pair equity curves from trades if not provided
     if not pair_equity_curves and per_pair_trades:
