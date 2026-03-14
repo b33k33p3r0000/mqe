@@ -38,7 +38,7 @@ body {
     font-family: var(--font-mono);
     font-size: 13px;
     line-height: 1.6;
-    padding: 24px 40px;
+    padding: 0;
     max-width: 1920px;
     margin: 0 auto;
 }
@@ -48,10 +48,10 @@ h1, h2, h3 {
     font-family: var(--font-mono);
 }
 
-/* Hero grid — 3 columns */
+/* Hero grid — 5 columns */
 .hero-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 16px;
     margin-bottom: 32px;
 }
@@ -306,6 +306,109 @@ tr:hover td {
 .report-meta {
     color: var(--text-secondary);
     font-size: 11px;
+}
+
+/* Sidebar navigation */
+.report-layout {
+    display: flex;
+    gap: 0;
+}
+
+.sidebar {
+    position: sticky;
+    top: 0;
+    width: 200px;
+    min-width: 200px;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    font-size: 11px;
+    z-index: 100;
+}
+
+.sidebar a {
+    display: block;
+    padding: 4px 16px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+}
+
+.sidebar a:hover {
+    color: var(--text-primary);
+    background: rgba(134, 225, 252, 0.05);
+}
+
+.sidebar a.active {
+    color: var(--accent-cyan);
+    border-left: 2px solid var(--accent-cyan);
+    background: rgba(134, 225, 252, 0.08);
+}
+
+.sidebar .nav-section {
+    font-weight: 700;
+    color: var(--text-primary);
+    padding: 12px 16px 4px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.report-content {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 40px;
+    max-width: 1920px;
+}
+
+@media (max-width: 900px) {
+    .sidebar { display: none; }
+    .report-content { padding: 16px; }
+}
+
+/* Stat cards for new sections */
+.stat-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.stat-card .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.stat-card .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+/* Sortable table headers */
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+th.sortable:hover {
+    color: var(--accent-cyan);
 }
 """
 
@@ -1094,6 +1197,7 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
         parcoords_div = f"s1-parcoords-{safe_id}"
 
         parcoords_html = f"""<div class="chart-container">
+<h4 style="color:#c099ff;font-size:13px;text-align:center;margin:8px 0 4px 0;font-family:'JetBrains Mono',monospace;">{sym} — Parallel Coordinates</h4>
 <div id="{parcoords_div}" style="width:100%;height:400px;"></div>
 <script>
 (function() {{
@@ -1101,8 +1205,7 @@ def _render_s1_top_trials(s1_top_trials: Dict[str, Any]) -> str:
   var layout = {{
     paper_bgcolor: '#2f334d', plot_bgcolor: '#222436',
     font: {{color: '#c8d3f5', family: 'JetBrains Mono, monospace', size: 10}},
-    title: {{text: '{sym} — Parallel Coordinates', font: {{size: 13, color: '#c099ff'}}}},
-    margin: {{l: 60, r: 60, t: 40, b: 30}}
+    margin: {{l: 60, r: 60, t: 50, b: 30}}
   }};
   Plotly.newPlot('{parcoords_div}', traces, layout, {{responsive: true}});
 }})();
