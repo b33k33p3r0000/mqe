@@ -2642,6 +2642,8 @@ def generate_html_report(
     # Render all sections
     hero = _render_hero_metrics(pipeline_result, eval_result, analysis)
     portfolio_eq = _render_portfolio_equity_curve(portfolio_equity_curve, timestamps)
+    underwater = _render_underwater_chart(portfolio_equity_curve, timestamps)
+    rolling_sharpe = _render_rolling_sharpe(portfolio_equity_curve, timestamps)
     concurrent = _render_concurrent_positions(portfolio_trades, timestamps)
     per_pair_tbl = _render_per_pair_table(pipeline_result, eval_result, analysis, excluded_symbols)
     per_pair_eq = _render_per_pair_equity_curves(filtered_pair_eq, timestamps)
@@ -2659,6 +2661,11 @@ def generate_html_report(
     corr_heat = _render_correlation_heatmap(corr_matrix)
     monthly = _render_monthly_returns(portfolio_trades, timestamps)
     trade_analysis = _render_trade_analysis(portfolio_trades, per_pair_trades)
+    long_short = _render_long_short_analysis(portfolio_trades)
+    top_drawdowns = _render_top_drawdowns(portfolio_equity_curve, timestamps)
+    streak_analysis = _render_streak_analysis(portfolio_trades, eval_result.get("portfolio_metrics", eval_result))
+    trade_timing = _render_trade_timing(portfolio_trades)
+    per_pair_monthly = _render_per_pair_monthly_heatmaps(per_pair_trades, excluded_symbols)
 
     header_html = f"""
     <div class="report-header">
@@ -2674,38 +2681,108 @@ def generate_html_report(
     </div>
     """
 
-    divider_overview = '<div class="section-divider"><h2>Portfolio Overview</h2></div>'
-    divider_s1 = '<div class="section-divider"><h2>Stage 1 — Per-Pair Optimization</h2></div>'
-    divider_s2 = '<div class="section-divider"><h2>Stage 2 — Portfolio Optimization</h2></div>'
-    divider_pairs = '<div class="section-divider"><h2>Per-Pair Results</h2></div>'
-    divider_trades = '<div class="section-divider"><h2>Trade Analysis</h2></div>'
+    divider_overview = '<div class="section-divider" id="sec-portfolio-overview"><h2>Portfolio Overview</h2></div>'
+    divider_s1 = '<div class="section-divider" id="sec-stage1"><h2>Stage 1 — Per-Pair Optimization</h2></div>'
+    divider_s2 = '<div class="section-divider" id="sec-stage2"><h2>Stage 2 — Portfolio Optimization</h2></div>'
+    divider_pairs = '<div class="section-divider" id="sec-per-pair"><h2>Per-Pair Results</h2></div>'
+    divider_trades = '<div class="section-divider" id="sec-trade-analysis"><h2>Trade Analysis</h2></div>'
+
+    sidebar_html = """
+<nav class="sidebar">
+    <div class="nav-section">Portfolio Overview</div>
+    <a href="#sec-hero">Hero Metrics</a>
+    <a href="#sec-portfolio-eq">Equity Curve</a>
+    <a href="#sec-underwater">Underwater</a>
+    <a href="#sec-rolling-sharpe">Rolling Sharpe</a>
+    <a href="#sec-concurrent">Concurrent Positions</a>
+    <a href="#sec-monthly">Monthly Returns</a>
+    <div class="nav-section">Trade Analysis</div>
+    <a href="#sec-long-short">Long vs Short</a>
+    <a href="#sec-top-drawdowns">Top Drawdowns</a>
+    <a href="#sec-streaks">Win/Loss Streaks</a>
+    <a href="#sec-trade-timing">Trade Timing</a>
+    <a href="#sec-pnl-contrib">P&amp;L Contribution</a>
+    <a href="#sec-correlation">Correlation</a>
+    <a href="#sec-exit-reasons">Exit Reasons</a>
+    <div class="nav-section">Per-Pair Results</div>
+    <a href="#sec-per-pair">Performance Table</a>
+    <a href="#sec-per-pair-eq">Equity Curves</a>
+    <a href="#sec-per-pair-monthly">Monthly Heatmaps</a>
+    <a href="#sec-tier-pbo">Tier &amp; PBO</a>
+    <div class="nav-section">Stage 1</div>
+    <a href="#sec-stage1">Parameters</a>
+    <a href="#sec-s1-top-trials">Top Trials</a>
+    <a href="#sec-s1-history">Optimization History</a>
+    <div class="nav-section">Stage 2</div>
+    <a href="#sec-stage2">Parameters</a>
+    <a href="#sec-pareto">Pareto Front</a>
+    <a href="#sec-s2-history">Optimization History</a>
+</nav>
+"""
+
+    observer_js = """
+<script>
+(function() {
+  var links = document.querySelectorAll('.sidebar a[href^="#"]');
+  var sections = [];
+  links.forEach(function(link) {
+    var id = link.getAttribute('href').substring(1);
+    var el = document.getElementById(id);
+    if (el) sections.push({el: el, link: link});
+  });
+  if (!sections.length) return;
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      sections.forEach(function(s) {
+        if (s.el === entry.target) {
+          if (entry.isIntersecting) s.link.classList.add('active');
+          else s.link.classList.remove('active');
+        }
+      });
+    });
+  }, {rootMargin: '-50% 0px -50% 0px'});
+  sections.forEach(function(s) { observer.observe(s.el); });
+})();
+</script>"""
 
     body = f"""
+<div class="report-layout">
+{sidebar_html}
+<main class="report-content">
 {header_html}
-{hero}
+<div id="sec-hero">{hero}</div>
 {divider_overview}
-{portfolio_eq}
-{concurrent}
-{monthly}
+<div id="sec-portfolio-eq">{portfolio_eq}</div>
+{underwater}
+{rolling_sharpe}
+<div id="sec-concurrent">{concurrent}</div>
+<div id="sec-monthly">{monthly}</div>
+{divider_trades}
+{long_short}
+{top_drawdowns}
+{streak_analysis}
+{trade_timing}
+<div id="sec-pnl-contrib">{pnl_contrib}</div>
+<div id="sec-correlation">{corr_heat}</div>
+<div id="sec-exit-reasons">{trade_analysis}</div>
+{divider_pairs}
+{per_pair_tbl}
+<div id="sec-per-pair-eq">{per_pair_eq}</div>
+{per_pair_monthly}
+<div id="sec-tier-pbo">{tier_tbl}
+{pbo_chart}
+{wf_eval}</div>
 {divider_s1}
 {s1_params}
 {s1_bullet}
+<div id="sec-s1-top-trials">{s1_top}</div>
+<div id="sec-s1-history">{s1_hist}</div>
 {divider_s2}
 {s2_params}
-{pareto}
-{s2_hist}
-{divider_trades}
-{pnl_contrib}
-{corr_heat}
-{trade_analysis}
-{divider_pairs}
-{per_pair_tbl}
-{per_pair_eq}
-{tier_tbl}
-{pbo_chart}
-{wf_eval}
-{s1_top}
-{s1_hist}
+<div id="sec-pareto">{pareto}</div>
+<div id="sec-s2-history">{s2_hist}</div>
+</main>
+</div>
 """
 
     html = f"""<!DOCTYPE html>
@@ -2721,6 +2798,7 @@ def generate_html_report(
 </head>
 <body>
 {body}
+{observer_js}
 </body>
 </html>"""
 

@@ -1454,6 +1454,12 @@ class TestFullReportIntegration:
         assert "ETH/USDT" in html
         assert "148,742" in html
         assert "Plotly.newPlot" in html
+        # New sections
+        assert 'class="sidebar"' in html
+        assert 'class="report-layout"' in html
+        assert "Sortino" in html
+        assert "Profit Factor" in html
+        assert "sortTable" in html
 
 
 # ─── Per-Pair Monthly Heatmaps (Task 10) ───
@@ -1486,3 +1492,19 @@ def test_per_pair_monthly_heatmaps_excludes_tier_x():
     html = _render_per_pair_monthly_heatmaps(trades, {"JUNK/USDT"})
     assert "BTC/USDT" in html
     assert "JUNK/USDT" not in html
+
+
+# ─── Sidebar + Layout Tests (Task 11) ───
+
+
+def test_report_has_sidebar(minimal_report_args):
+    result = generate_html_report(**minimal_report_args)
+    assert 'class="sidebar"' in result
+    assert 'class="report-layout"' in result
+    assert 'class="report-content"' in result
+
+
+def test_report_has_section_ids(minimal_report_args):
+    result = generate_html_report(**minimal_report_args)
+    assert 'id="sec-hero"' in result
+    assert 'id="sec-portfolio-overview"' in result
