@@ -1,5 +1,26 @@
 # MQE Session Notes
 
+## 2026-03-15 — /analyze 20260315_091603
+
+**Verdict:** MEDIUM confidence — WF validace funguje excelentně (12/20 excluded), Tier A páry solidní, portfolio over-constrained.
+
+**Key findings:**
+- portfolio_heat=0.127 drží ~90% kapitálu v cash — portfolio zachytí jen 6.9% per-pair potenciálu
+- Regime dependency: prvních 10 měsíců (bear/sideways 2023) produkuje 0.2% return, 52% PnL z posledního roku
+- BNB (Tier C) přidává $1,059 ze 596 trades — deadweight, tier C threshold příliš shovívavý
+- PBO uniformně 0.0 pro všech 20 párů (logit_pbo=-13.82) — pravděpodobně bug v implementaci
+- Hard stop exit rate 22% — každý 4. trade doběhne do plného stopu
+- Tier A WF degradation: BTC 0.99, SOL 0.94, LINK 0.84, XRP 0.73, ETH 0.66 — všechny solidní
+
+**Open questions:**
+- Je portfolio_heat=0.127 optimální? Vyšší heat = lepší capital utilization + vyšší DD
+- PBO implementace vyžaduje review (0.0 pro 20/20 je statisticky nepravděpodobné)
+- 12 excluded párů — skutečně neobchodovatelné nebo jiné parametry/strategie?
+
+Full analysis: `docs/analyze/2026-03-15-mqe-20260315_091603.md`
+
+---
+
 ## 2026-03-14 — Monitor: eval phase visibility
 
 Monitor live dashboard nyní zobrazuje mezistavy pipeline mezi S1 a S2 místo generického "S2: waiting...".

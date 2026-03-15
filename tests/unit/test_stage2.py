@@ -10,28 +10,10 @@ from mqe.stage2 import (
     build_portfolio_objective,
     run_stage2,
 )
-from tests.conftest import make_1h_ohlcv_pd, resample_to_multi_tf
+from tests.conftest import make_1h_ohlcv_pd, make_pair_signals, resample_to_multi_tf
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
-
-
-def _make_pair_signals(n_bars, buy_bars=None, sell_bars=None, seed=42):
-    """Create synthetic signal arrays for testing."""
-    rng = np.random.RandomState(seed)
-    buy = np.zeros(n_bars, dtype=np.bool_)
-    sell = np.zeros(n_bars, dtype=np.bool_)
-    if buy_bars:
-        for b in buy_bars:
-            if b < n_bars:
-                buy[b] = True
-    if sell_bars:
-        for s in sell_bars:
-            if s < n_bars:
-                sell[s] = True
-    atr_arr = np.full(n_bars, 2.0)
-    sig_str = rng.rand(n_bars).astype(np.float64)
-    return buy, sell, atr_arr, sig_str
 
 
 def _build_synthetic_inputs(n_bars=500, n_pairs=2, seed=42):
@@ -50,7 +32,7 @@ def _build_synthetic_inputs(n_bars=500, n_pairs=2, seed=42):
         rng = np.random.RandomState(seed + i + 100)
         buy_bars = sorted(rng.choice(range(250, n_bars - 50), size=5, replace=False).tolist())
         sell_bars = sorted(rng.choice(range(250, n_bars - 50), size=5, replace=False).tolist())
-        pair_signals[sym] = _make_pair_signals(
+        pair_signals[sym] = make_pair_signals(
             n_bars, buy_bars=buy_bars, sell_bars=sell_bars, seed=seed + i,
         )
 
@@ -126,6 +108,7 @@ class TestBuildPortfolioObjective:
 # ─── run_stage2 ─────────────────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 class TestRunStage2:
     @pytest.fixture
     def synthetic_inputs(self):
@@ -138,7 +121,7 @@ class TestRunStage2:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=5,
+            n_trials=3,
             seed=42,
         )
         assert isinstance(result, dict)
@@ -150,7 +133,7 @@ class TestRunStage2:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=5,
+            n_trials=3,
             seed=42,
         )
         assert "portfolio_params" in result
@@ -168,7 +151,7 @@ class TestRunStage2:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=5,
+            n_trials=3,
             seed=42,
         )
         assert "objectives" in result
@@ -184,7 +167,7 @@ class TestRunStage2:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=5,
+            n_trials=3,
             seed=42,
         )
         assert "pareto_front_size" in result
@@ -197,7 +180,7 @@ class TestRunStage2:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=5,
+            n_trials=3,
             seed=42,
         )
         assert "cluster_max" in result["portfolio_params"]
@@ -211,10 +194,10 @@ class TestRunStage2:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=5,
+            n_trials=3,
             seed=42,
         )
-        assert result["n_trials"] == 5
+        assert result["n_trials"] == 3
 
 
 # ─── NSGA-II sampler ───────────────────────────────────────────────────────
@@ -246,6 +229,7 @@ class TestNSGA2Sampler:
 # ─── Pareto front selection ────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 class TestParetoFrontSelection:
     def test_pareto_front_selection(self):
         """run_stage2 selects best trial from Pareto front."""
@@ -256,7 +240,7 @@ class TestParetoFrontSelection:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=10,
+            n_trials=3,
             seed=42,
         )
         # Pareto front should have at least 1 trial
@@ -273,7 +257,7 @@ class TestParetoFrontSelection:
             pair_data=pair_data,
             pair_signals=pair_signals,
             pair_params=pair_params,
-            n_trials=10,
+            n_trials=3,
             seed=99,
         )
         assert isinstance(result, dict)

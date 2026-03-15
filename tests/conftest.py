@@ -1,7 +1,35 @@
 """Shared test fixtures and factory functions for MQE tests."""
 
+from typing import Optional, List, Tuple
+
 import numpy as np
 import pandas as pd
+
+
+def make_pair_signals(
+    n_bars: int,
+    buy_bars: Optional[List[int]] = None,
+    sell_bars: Optional[List[int]] = None,
+    seed: int = 42,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Create synthetic signal arrays (buy, sell, atr, signal_strength) for testing.
+
+    Returns 4-tuple of numpy arrays: (buy_bool, sell_bool, atr_float64, strength_float64).
+    """
+    rng = np.random.RandomState(seed)
+    buy = np.zeros(n_bars, dtype=np.bool_)
+    sell = np.zeros(n_bars, dtype=np.bool_)
+    if buy_bars:
+        for b in buy_bars:
+            if b < n_bars:
+                buy[b] = True
+    if sell_bars:
+        for s in sell_bars:
+            if s < n_bars:
+                sell[s] = True
+    atr_arr = np.full(n_bars, 2.0)
+    sig_str = rng.rand(n_bars).astype(np.float64)
+    return buy, sell, atr_arr, sig_str
 
 
 def make_1h_ohlcv_pd(n_bars: int = 500, seed: int = 42, start: str = "2025-01-01") -> pd.DataFrame:

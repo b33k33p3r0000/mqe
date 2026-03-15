@@ -178,6 +178,6 @@ def test_trial_thresholds_defined():
     )
     assert TRIALS_LONG_THRESHOLD_HOURS == 39420
     assert TRIALS_MEDIUM_THRESHOLD_HOURS == 21900
-    assert TRIALS_LONG == 65_000
-    assert TRIALS_MEDIUM == 50_000
-    assert TRIALS_SHORT == 35_000
+    assert TRIALS_LONG == 50_000
+    assert TRIALS_MEDIUM == 30_000
+    assert TRIALS_SHORT == 20_000

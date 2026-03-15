@@ -6,22 +6,7 @@ import pytest
 
 from mqe.config import CORRELATION_GATE_THRESHOLD
 from mqe.core.portfolio import PortfolioSimulator, PortfolioResult
-from tests.conftest import make_1h_ohlcv_pd, resample_to_multi_tf
-
-
-def _make_pair_signals(n_bars, buy_bars=None, sell_bars=None):
-    """Create synthetic signal arrays for testing."""
-    buy = np.zeros(n_bars, dtype=np.bool_)
-    sell = np.zeros(n_bars, dtype=np.bool_)
-    if buy_bars:
-        for b in buy_bars:
-            buy[b] = True
-    if sell_bars:
-        for s in sell_bars:
-            sell[s] = True
-    atr_arr = np.full(n_bars, 2.0)
-    sig_str = np.random.rand(n_bars)
-    return buy, sell, atr_arr, sig_str
+from tests.conftest import make_1h_ohlcv_pd, make_pair_signals, resample_to_multi_tf
 
 
 class TestPortfolioResult:
@@ -31,8 +16,8 @@ class TestPortfolioResult:
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data, "ETH/USDT": data}
         pair_signals = {
-            "BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
-            "ETH/USDT": _make_pair_signals(n, buy_bars=[260], sell_bars=[310]),
+            "BTC/USDT": make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
+            "ETH/USDT": make_pair_signals(n, buy_bars=[260], sell_bars=[310]),
         }
         pair_params = {
             "BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168},
@@ -54,7 +39,7 @@ class TestPortfolioResult:
         data = resample_to_multi_tf(df)
         pair_data = {f"PAIR{i}/USDT": data for i in range(3)}
         pair_signals = {
-            f"PAIR{i}/USDT": _make_pair_signals(n, buy_bars=[250])
+            f"PAIR{i}/USDT": make_pair_signals(n, buy_bars=[250])
             for i in range(3)
         }
         pair_params = {
@@ -75,7 +60,7 @@ class TestPortfolioResult:
         df = make_1h_ohlcv_pd(n_bars=n, seed=42)
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data}
-        pair_signals = {"BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300])}
+        pair_signals = {"BTC/USDT": make_pair_signals(n, buy_bars=[250], sell_bars=[300])}
         pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
         sim = PortfolioSimulator(pair_data=pair_data, pair_signals=pair_signals, pair_params=pair_params)
         result = sim.run()
@@ -95,7 +80,7 @@ class TestPortfolioExits:
         data = resample_to_multi_tf(df)
 
         # Buy at bar 250, price should drop enough to trigger hard stop
-        pair_signals = {"BTC/USDT": _make_pair_signals(n, buy_bars=[250])}
+        pair_signals = {"BTC/USDT": make_pair_signals(n, buy_bars=[250])}
         pair_params = {
             "BTC/USDT": {"hard_stop_mult": 0.5, "trail_mult": 5.0, "max_hold_bars": 500},
         }
@@ -118,7 +103,7 @@ class TestPortfolioExits:
         data = resample_to_multi_tf(df)
 
         # Buy at bar 250, no sell signal, short max_hold_bars
-        pair_signals = {"BTC/USDT": _make_pair_signals(n, buy_bars=[250])}
+        pair_signals = {"BTC/USDT": make_pair_signals(n, buy_bars=[250])}
         pair_params = {
             "BTC/USDT": {"hard_stop_mult": 100.0, "trail_mult": 100.0, "max_hold_bars": 20},
         }
@@ -139,7 +124,7 @@ class TestPortfolioExits:
         data = resample_to_multi_tf(df)
 
         # Buy at 250, sell at 260 (close enough that stop/trail won't trigger first)
-        pair_signals = {"BTC/USDT": _make_pair_signals(
+        pair_signals = {"BTC/USDT": make_pair_signals(
             n, buy_bars=[250], sell_bars=[260]
         )}
         pair_params = {
@@ -161,7 +146,7 @@ class TestPortfolioExits:
         data = resample_to_multi_tf(df)
 
         # Buy at 250, no sell signal, impossibly wide stops
-        pair_signals = {"BTC/USDT": _make_pair_signals(n, buy_bars=[250])}
+        pair_signals = {"BTC/USDT": make_pair_signals(n, buy_bars=[250])}
         pair_params = {
             "BTC/USDT": {"hard_stop_mult": 100.0, "trail_mult": 100.0, "max_hold_bars": 9999},
         }
@@ -182,7 +167,7 @@ class TestPortfolioHeat:
         df = make_1h_ohlcv_pd(n_bars=n, seed=42)
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data}
-        pair_signals = {"BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300])}
+        pair_signals = {"BTC/USDT": make_pair_signals(n, buy_bars=[250], sell_bars=[300])}
         pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
         sim = PortfolioSimulator(
             pair_data=pair_data,
@@ -208,9 +193,9 @@ class TestClusterMax:
             "ADA/USDT": data,
         }
         pair_signals = {
-            "ETH/USDT": _make_pair_signals(n, buy_bars=[250]),
-            "SOL/USDT": _make_pair_signals(n, buy_bars=[250]),
-            "ADA/USDT": _make_pair_signals(n, buy_bars=[250]),
+            "ETH/USDT": make_pair_signals(n, buy_bars=[250]),
+            "SOL/USDT": make_pair_signals(n, buy_bars=[250]),
+            "ADA/USDT": make_pair_signals(n, buy_bars=[250]),
         }
         pair_params = {
             sym: {"hard_stop_mult": 100.0, "trail_mult": 100.0, "max_hold_bars": 9999}
@@ -237,8 +222,8 @@ class TestPerPairTrades:
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data, "ETH/USDT": data}
         pair_signals = {
-            "BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
-            "ETH/USDT": _make_pair_signals(n, buy_bars=[260], sell_bars=[310]),
+            "BTC/USDT": make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
+            "ETH/USDT": make_pair_signals(n, buy_bars=[260], sell_bars=[310]),
         }
         pair_params = {
             "BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168},
@@ -260,7 +245,7 @@ class TestPerPairTrades:
         df = make_1h_ohlcv_pd(n_bars=n, seed=42)
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data}
-        pair_signals = {"BTC/USDT": _make_pair_signals(n)}  # no buy/sell bars
+        pair_signals = {"BTC/USDT": make_pair_signals(n)}  # no buy/sell bars
         pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
         sim = PortfolioSimulator(
             pair_data=pair_data,
@@ -281,7 +266,7 @@ class TestShortPositions:
         df = make_1h_ohlcv_pd(n_bars=n, seed=42)
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data}
-        pair_signals = {"BTC/USDT": _make_pair_signals(n, sell_bars=[250], buy_bars=[300])}
+        pair_signals = {"BTC/USDT": make_pair_signals(n, sell_bars=[250], buy_bars=[300])}
         pair_params = {"BTC/USDT": {"hard_stop_mult": 100.0, "trail_mult": 100.0, "max_hold_bars": 500}}
         sim = PortfolioSimulator(
             pair_data=pair_data,
@@ -303,8 +288,8 @@ class TestTierMultipliers:
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data, "ETH/USDT": data}
         pair_signals = {
-            "BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
-            "ETH/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
+            "BTC/USDT": make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
+            "ETH/USDT": make_pair_signals(n, buy_bars=[250], sell_bars=[300]),
         }
         pair_params = {
             "BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168},
@@ -333,8 +318,8 @@ class TestTierMultipliers:
 
         # Both pairs signal at the same bar with max_concurrent=5 so both pass filter.
         # Deterministic signal strengths: BTC raw=0.5, ETH raw=0.9
-        btc_sig = _make_pair_signals(n, buy_bars=[250])
-        eth_sig = _make_pair_signals(n, buy_bars=[250])
+        btc_sig = make_pair_signals(n, buy_bars=[250])
+        eth_sig = make_pair_signals(n, buy_bars=[250])
         btc_sig[3][250] = 0.5
         eth_sig[3][250] = 0.9
 
@@ -378,7 +363,7 @@ class TestTierMultipliers:
         df = make_1h_ohlcv_pd(n_bars=n, seed=42)
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data}
-        pair_signals = {"BTC/USDT": _make_pair_signals(n, buy_bars=[250], sell_bars=[300])}
+        pair_signals = {"BTC/USDT": make_pair_signals(n, buy_bars=[250], sell_bars=[300])}
         pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
 
         # Without tier_multipliers (default)
@@ -413,7 +398,7 @@ class TestCorrGateThreshold:
         df = make_1h_ohlcv_pd(n_bars=n, seed=42)
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data}
-        pair_signals = {"BTC/USDT": _make_pair_signals(n)}
+        pair_signals = {"BTC/USDT": make_pair_signals(n)}
         pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
         sim = PortfolioSimulator(
             pair_data=pair_data,
@@ -427,7 +412,7 @@ class TestCorrGateThreshold:
         df = make_1h_ohlcv_pd(n_bars=n, seed=42)
         data = resample_to_multi_tf(df)
         pair_data = {"BTC/USDT": data}
-        pair_signals = {"BTC/USDT": _make_pair_signals(n)}
+        pair_signals = {"BTC/USDT": make_pair_signals(n)}
         pair_params = {"BTC/USDT": {"hard_stop_mult": 2.5, "trail_mult": 3.0, "max_hold_bars": 168}}
         sim = PortfolioSimulator(
             pair_data=pair_data,

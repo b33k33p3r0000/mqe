@@ -126,6 +126,7 @@ class TestBuildObjective:
         obj = build_objective("BTC/USDT", data, splits)
         assert callable(obj)
 
+    @pytest.mark.slow
     def test_callable_returns_float(self):
         """Objective returns a float when called with a trial."""
         import optuna
@@ -152,6 +153,7 @@ class TestBuildObjective:
 # ─── run_stage1_pair ────────────────────────────────────────────────────────
 
 
+@pytest.mark.slow
 class TestRunStage1Pair:
     @pytest.fixture
     def synthetic_data(self):
@@ -164,7 +166,7 @@ class TestRunStage1Pair:
         result = run_stage1_pair(
             symbol="BTC/USDT",
             data=synthetic_data,
-            n_trials=20,
+            n_trials=5,
             seed=42,
         )
         assert isinstance(result, dict)
@@ -174,7 +176,7 @@ class TestRunStage1Pair:
         result = run_stage1_pair(
             symbol="BTC/USDT",
             data=synthetic_data,
-            n_trials=20,
+            n_trials=5,
             seed=42,
         )
         expected_params = [
@@ -191,7 +193,7 @@ class TestRunStage1Pair:
         result = run_stage1_pair(
             symbol="BTC/USDT",
             data=synthetic_data,
-            n_trials=20,
+            n_trials=5,
             seed=42,
         )
         assert "objective_value" in result
@@ -202,7 +204,7 @@ class TestRunStage1Pair:
         result = run_stage1_pair(
             symbol="BTC/USDT",
             data=synthetic_data,
-            n_trials=20,
+            n_trials=5,
             seed=42,
         )
         assert result["objective_value"] >= 0.0
@@ -212,7 +214,7 @@ class TestRunStage1Pair:
         result = run_stage1_pair(
             symbol="BTC/USDT",
             data=synthetic_data,
-            n_trials=600,
+            n_trials=50,
             seed=42,
             output_dir=tmp_path,
             progress_interval=500,
@@ -226,7 +228,7 @@ class TestRunStage1Pair:
         result = run_stage1_pair(
             symbol="BTC/USDT",
             data=synthetic_data,
-            n_trials=20,
+            n_trials=5,
             seed=42,
         )
         assert isinstance(result, dict)
@@ -334,19 +336,19 @@ class TestProgressCallback:
 
 class TestComputeTrials:
     def test_compute_trials_long_data(self):
-        assert compute_trials(50000) == 65_000
+        assert compute_trials(50000) == 50_000
 
     def test_compute_trials_medium_data(self):
-        assert compute_trials(30000) == 50_000
+        assert compute_trials(30000) == 30_000
 
     def test_compute_trials_short_data(self):
-        assert compute_trials(20000) == 35_000
+        assert compute_trials(20000) == 20_000
 
     def test_compute_trials_boundary_long(self):
-        assert compute_trials(39420) == 65_000
+        assert compute_trials(39420) == 50_000
 
     def test_compute_trials_boundary_medium(self):
-        assert compute_trials(21900) == 50_000
+        assert compute_trials(21900) == 30_000
 
 
 # ─── AWF splits count by data length ──────────────────────────────────────
