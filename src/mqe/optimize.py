@@ -710,7 +710,7 @@ def run_pipeline(
     tag: str = "",
     max_workers: int | None = None,
     n_jobs: int | None = None,
-    no_garch: bool = False,
+    no_garch: bool = True,
 ) -> dict[str, Any]:
     """Run full MQE optimization pipeline.
 
@@ -982,7 +982,7 @@ def resume_pipeline(
     hours: int | None = None,
     tag: str = "",
     n_jobs: int | None = None,
-    no_garch: bool = False,
+    no_garch: bool = True,
 ) -> dict[str, Any]:
     """Resume MQE pipeline from Stage 2 using existing Stage 1 results.
 
@@ -1266,8 +1266,12 @@ def main() -> None:
         help="Resume from Stage 2 using existing run directory (e.g. results/20260304_194135)",
     )
     parser.add_argument(
-        "--no-garch", action="store_true", default=False,
-        help="Disable GARCH vol_sensitivity (for A/B comparison runs)",
+        "--no-garch", action="store_true", default=True,
+        help="Disable GARCH vol adjustment (default)",
+    )
+    parser.add_argument(
+        "--garch", dest="no_garch", action="store_false",
+        help="Enable GARCH vol adjustment",
     )
     args = parser.parse_args()
 

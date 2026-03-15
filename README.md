@@ -427,11 +427,11 @@ For each bar (1H):
 
 | Cluster | Páry | Max Concurrent |
 |---------|------|----------------|
-| blue_chip | BTC | 2 |
-| smart_contract_l1 | ETH, SOL, ADA, NEAR, APT, SUI | 2 |
+| blue_chip | BTC, LTC | 2 |
+| smart_contract_l1 | ETH, SOL, ADA, NEAR, APT, SUI, DOT, AVAX, ATOM | 2 |
 | l2 | ARB, OP | 1 |
 | exchange | BNB | 1 |
-| narrative | XRP, LINK, INJ | 2 |
+| narrative | XRP, LINK, INJ, UNI | 2 |
 | meme | DOGE | 1 |
 | storage | FIL | 1 |
 
@@ -483,7 +483,7 @@ compute_position_size(symbol, open_pairs, equity, atr_dict, corr_dict)
 
 ---
 
-## Pairs (15 symbols)
+## Pairs (20 symbols)
 
 | Pair | Tier | Cluster | BTC Corr | Slippage |
 |------|------|---------|----------|----------|
@@ -495,15 +495,18 @@ compute_position_size(symbol, open_pairs, equity, atr_dict, corr_dict)
 | LINK/USDT | A | narrative | 0.78 | 18 bps |
 | SUI/USDT | A- | smart_contract_l1 | 0.69 | 22 bps |
 | ADA/USDT | B+ | smart_contract_l1 | 0.80 | 20 bps |
+| LTC/USDT | B+ | blue_chip | 0.76 | 18 bps |
 | DOGE/USDT | B+ | meme | 0.65 | 15 bps |
 | NEAR/USDT | B | smart_contract_l1 | 0.73 | 25 bps |
 | APT/USDT | B | smart_contract_l1 | 0.73 | 25 bps |
+| DOT/USDT | B | smart_contract_l1 | 0.68 | 25 bps |
 | FIL/USDT | B | storage | 0.65 | 25 bps |
 | ARB/USDT | B- | l2 | 0.76 | 30 bps |
 | OP/USDT | B- | l2 | 0.76 | 30 bps |
 | INJ/USDT | B- | narrative | 0.69 | 35 bps |
-
-Removed (persistently unviable WF): LTC, ATOM, UNI, AVAX, DOT.
+| AVAX/USDT | B- | smart_contract_l1 | 0.63 | 28 bps |
+| ATOM/USDT | B- | smart_contract_l1 | 0.61 | 28 bps |
+| UNI/USDT | B- | narrative | 0.63 | 30 bps |
 
 Per-tier search spaces — `allow_flip` is disabled for ALL tiers `(0,0)`. Lower tiers have progressively tighter parameter ranges.
 
@@ -576,8 +579,8 @@ uv run python -m mqe.optimize --resume results/20260304_194135 --s2-trials 10000
 | Preset | S1 Trials | S2 Trials | Pairs | Purpose |
 |--------|-----------|-----------|-------|---------|
 | Test | adaptive | 500 | 3 (core) | Smoke test |
-| Standard | adaptive | 5,000 | 15 (all) | Normal run |
-| Full | adaptive | 10,000 | 15 (all) | Max quality |
+| Standard | adaptive | 5,000 | 20 (all) | Normal run |
+| Full | adaptive | 10,000 | 20 (all) | Max quality |
 | Custom | adaptive | user input | user input | Manual override |
 
 S1 trials are **data-adaptive**: <2.5yr = 35k, >=2.5yr = 50k, >=4.5yr = 65k trials per pair.

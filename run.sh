@@ -10,7 +10,7 @@ cd "$SCRIPT_DIR"
 # CONSTANTS
 # =============================================================================
 
-ALL_PAIRS="BTC/USDT ETH/USDT SOL/USDT XRP/USDT BNB/USDT LINK/USDT SUI/USDT ADA/USDT APT/USDT NEAR/USDT ARB/USDT OP/USDT INJ/USDT DOGE/USDT FIL/USDT"
+ALL_PAIRS="BTC/USDT ETH/USDT SOL/USDT XRP/USDT BNB/USDT LINK/USDT SUI/USDT ADA/USDT APT/USDT NEAR/USDT ARB/USDT OP/USDT INJ/USDT DOGE/USDT FIL/USDT LTC/USDT DOT/USDT AVAX/USDT ATOM/USDT UNI/USDT"
 
 # =============================================================================
 # HELP
@@ -23,8 +23,8 @@ MQE Optimizer — Multi-pair Quant Engine
 
 Presets (interactive menu when no CLI args):
   1) Test       —   500 S2,  3 core pairs (smoke test)
-  2) Standard   —    5k S2, 15 pairs (normal run)
-  3) Full       —   10k S2, 15 pairs (max quality)
+  2) Standard   —    5k S2, 20 pairs (normal run)
+  3) Full       —   10k S2, 20 pairs (max quality)
   4) Custom     — You choose everything
 
 S1 trials are data-adaptive (automatic per pair):
@@ -70,7 +70,7 @@ WORKERS=""
 FOREGROUND=false
 SYMBOLS_OVERRIDE=""
 PRESET=""
-NO_GARCH=false
+NO_GARCH=true
 LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 
@@ -284,8 +284,8 @@ if [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
     echo "==========================="
     echo ""
     echo "  1) Test      —   500 S2,  3 core pairs"
-    echo "  2) Standard  —    5k S2, 15 pairs"
-    echo "  3) Full      —   10k S2, 15 pairs"
+    echo "  2) Standard  —    5k S2, 20 pairs"
+    echo "  3) Full      —   10k S2, 20 pairs"
     echo "  4) Custom    —  You choose everything"
     echo ""
     read -p "Select preset (1-4): " choice
@@ -316,7 +316,7 @@ if [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
             WORKERS="${WORKERS:-}"
             echo ""
             echo "Pairs:"
-            echo "  1) All 15 (full cluster set)"
+            echo "  1) All 20 (full cluster set)"
             echo "  2) Custom list"
             read -p "Select (1-2) [1]: " pair_choice
             case "${pair_choice:-1}" in
@@ -335,13 +335,13 @@ if [ -z "$S2_TRIALS" ] && [ -z "$SYMBOLS_OVERRIDE" ]; then
     # GARCH toggle
     echo ""
     echo "GARCH volatility adjustment:"
-    echo "  1) Enabled  — position sizing adapts to GARCH vol forecast (default)"
-    echo "  2) Disabled — flat position sizing (for A/B comparison)"
+    echo "  1) Disabled — flat position sizing (default)"
+    echo "  2) Enabled  — position sizing adapts to GARCH vol forecast"
     echo ""
     read -p "GARCH mode (1-2) [1]: " garch_choice
     case "${garch_choice:-1}" in
-        2) NO_GARCH=true ;;
-        *) NO_GARCH=false ;;
+        2) NO_GARCH=false ;;
+        *) NO_GARCH=true ;;
     esac
 
     if [ -z "$TAG" ]; then
@@ -356,7 +356,7 @@ fi
 S2_TRIALS="${S2_TRIALS:-5000}"
 HOURS="${HOURS:-26280}"
 
-# If no symbols specified at all, use all 15
+# If no symbols specified at all, use all 20
 if [ -z "$SYMBOLS_OVERRIDE" ]; then
     SYMBOLS_OVERRIDE="$ALL_PAIRS"
 fi
@@ -379,8 +379,8 @@ build_cmd() {
     if [ -n "$WORKERS" ]; then
         cmd="$cmd --workers $WORKERS"
     fi
-    if $NO_GARCH; then
-        cmd="$cmd --no-garch"
+    if ! $NO_GARCH; then
+        cmd="$cmd --garch"
     fi
     echo "$cmd"
 }
@@ -400,7 +400,7 @@ echo "  MQE Optimizer — Multi-pair Quant Engine"
 echo "═══════════════════════════════════════════════════════"
 [ -n "$PRESET" ] && echo "  Preset:    $PRESET"
 echo "  S1 trials: adaptive (<2.5yr=20k, >=2.5yr=30k, >=4.5yr=50k)"
-$NO_GARCH && echo "  GARCH:     DISABLED"
+$NO_GARCH && echo "  GARCH:     OFF (default)" || echo "  GARCH:     ON"
 echo "  S2 trials: $S2_TRIALS (portfolio)"
 echo "  Hours:     $HOURS (~$((HOURS / 24)) days)"
 echo "  Symbols:   $SYMBOL_COUNT pairs"
