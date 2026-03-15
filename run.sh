@@ -134,43 +134,83 @@ if [[ $# -gt 0 ]]; then
             exit 0
             ;;
         kill)
+            # Find main MQE optimize processes (uv or python, not multiprocessing workers)
             PIDS=()
             CMDS=()
             while IFS= read -r pid; do
                 cmd=$(ps -p "$pid" -o args= 2>/dev/null || true)
+                # Skip multiprocessing spawn workers — they'll die with parent
+                case "$cmd" in *multiprocessing.spawn*|*multiprocessing.resource_tracker*) continue ;; esac
                 PIDS+=("$pid")
                 CMDS+=("$cmd")
-            done < <(pgrep -f "python.*mqe\.optimize" 2>/dev/null || true)
+            done < <(pgrep -if "mqe[.]optimize" 2>/dev/null || true)
 
-            _kill_pid() {
+            _kill_tree() {
                 local pid=$1
+                # Collect all descendant PIDs (children, grandchildren)
+                local children
+                children=$(pgrep -P "$pid" 2>/dev/null || true)
+
+                # SIGTERM the main process first (triggers graceful Optuna shutdown)
                 kill "$pid" 2>/dev/null || true
                 echo "Sent SIGTERM to PID $pid..."
-                for i in 1 2 3; do
+
+                # Wait for main process
+                for i in 1 2 3 4 5; do
                     sleep 1
                     if ! kill -0 "$pid" 2>/dev/null; then
                         echo "PID $pid terminated."
-                        return 0
+                        break
                     fi
                 done
-                echo "Still running — sending SIGKILL..."
-                kill -9 "$pid" 2>/dev/null || true
-                sleep 0.5
-                if ! kill -0 "$pid" 2>/dev/null; then
-                    echo "PID $pid killed."
-                else
-                    echo "WARNING: PID $pid may still be running."
+
+                # Force-kill if still running
+                if kill -0 "$pid" 2>/dev/null; then
+                    echo "Still running — sending SIGKILL..."
+                    kill -9 "$pid" 2>/dev/null || true
+                    sleep 0.5
                 fi
+
+                # Kill any remaining children (multiprocessing workers)
+                for cpid in $children $(pgrep -P "$pid" 2>/dev/null || true); do
+                    if kill -0 "$cpid" 2>/dev/null; then
+                        kill "$cpid" 2>/dev/null || true
+                        sleep 0.5
+                        if kill -0 "$cpid" 2>/dev/null; then
+                            kill -9 "$cpid" 2>/dev/null || true
+                        fi
+                        echo "Killed child PID $cpid"
+                    fi
+                done
             }
 
             if [ ${#PIDS[@]} -eq 0 ]; then
-                echo "No MQE optimizer runs found."
+                # Check for orphaned multiprocessing workers (PPID=1)
+                ORPHANS=$(ps -eo pid,ppid,args 2>/dev/null | awk '$2 == 1 && /multiprocessing.spawn/ && /mqe/' | awk '{print $1}')
+                if [ -n "$ORPHANS" ]; then
+                    echo "No main process found, but orphaned workers detected:"
+                    echo "$ORPHANS" | while read -r opid; do
+                        cmd=$(ps -p "$opid" -o args= 2>/dev/null | head -c 80 || true)
+                        echo "  PID $opid: $cmd"
+                    done
+                    echo ""
+                    read -p "Kill orphaned workers? (y/n) [y]: " confirm
+                    confirm="${confirm:-y}"
+                    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+                        echo "$ORPHANS" | while read -r opid; do
+                            kill "$opid" 2>/dev/null || true
+                            echo "Killed orphan PID $opid"
+                        done
+                    fi
+                else
+                    echo "No MQE optimizer runs found."
+                fi
                 exit 0
             elif [ ${#PIDS[@]} -eq 1 ]; then
                 echo "Killing MQE run (PID ${PIDS[0]}):"
                 echo "  ${CMDS[0]}"
                 echo ""
-                _kill_pid "${PIDS[0]}"
+                _kill_tree "${PIDS[0]}"
             else
                 echo "Multiple MQE runs detected:"
                 echo ""
@@ -182,12 +222,12 @@ if [[ $# -gt 0 ]]; then
                 read -p "Select run to kill (1-${#PIDS[@]}, a=all): " pick
                 if [ "$pick" = "a" ] || [ "$pick" = "A" ]; then
                     for pid in "${PIDS[@]}"; do
-                        _kill_pid "$pid"
+                        _kill_tree "$pid"
                     done
                 else
                     idx=$((pick - 1))
                     if [ "$idx" -ge 0 ] && [ "$idx" -lt ${#PIDS[@]} ]; then
-                        _kill_pid "${PIDS[$idx]}"
+                        _kill_tree "${PIDS[$idx]}"
                     else
                         echo "Invalid choice"
                         exit 1
